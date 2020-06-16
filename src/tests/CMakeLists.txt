@@ -16,8 +16,9 @@
 #
 # Author:
 #
-
+if (NOT ANDROID)
 add_subdirectory(list)
+endif()
 if(OPENGL_FOUND AND NOT TARGET openxr-gfxwrapper)
     return()
 endif()

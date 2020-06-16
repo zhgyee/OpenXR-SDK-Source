@@ -23,11 +23,23 @@ file(GLOB VULKAN_SHADERS "vulkan_shaders/*.glsl")
 
 # For including compiled shaders
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
+include_directories(${PROJECT_BINARY_DIR}/include)
 
-add_executable(hello_xr
-    ${LOCAL_SOURCE}
-    ${LOCAL_HEADERS}
-    ${VULKAN_SHADERS})
+if (ANDROID)
+    add_library(openxr SHARED IMPORTED)
+    set_target_properties(openxr PROPERTIES IMPORTED_LOCATION
+            ${OPENXR_PATH}/${ANDROID_ABI}/libopenxr.so)
+
+    add_library(hello_xr SHARED
+            ${LOCAL_SOURCE}
+            ${LOCAL_HEADERS}
+            ${VULKAN_SHADERS})
+else()
+    add_executable(hello_xr
+        ${LOCAL_SOURCE}
+        ${LOCAL_HEADERS}
+        ${VULKAN_SHADERS})
+endif()
 set_target_properties(hello_xr PROPERTIES FOLDER ${SAMPLES_FOLDER})
 
 source_group("Headers" FILES ${LOCAL_HEADERS})
@@ -52,6 +64,12 @@ target_include_directories(hello_xr
     # for helper headers
     ${PROJECT_SOURCE_DIR}/external/include
 )
+if(ANDROID)
+    target_include_directories(hello_xr
+        PRIVATE
+        ${ANDROID_NDK}/sources/android/native_app_glue
+    )
+endif()
 
 if(VulkanHeaders_INCLUDE_DIRS)
     target_include_directories(hello_xr
@@ -59,8 +77,11 @@ if(VulkanHeaders_INCLUDE_DIRS)
         ${VulkanHeaders_INCLUDE_DIRS}
     )
 endif()
-
-target_link_libraries(hello_xr openxr_loader)
+if(ANDROID)
+    target_link_libraries(hello_xr openxr android log)
+else()
+    target_link_libraries(hello_xr openxr_loader)
+endif()
 if(TARGET openxr-gfxwrapper)
     target_link_libraries(hello_xr openxr-gfxwrapper)
 endif()
@@ -87,8 +108,10 @@ if(Vulkan_LIBRARY)
     target_link_libraries(hello_xr ${Vulkan_LIBRARY})
 endif()
 
+if (NOT ANDROID)
 install(TARGETS hello_xr
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
 
 if(NOT WIN32)
     install(FILES hello_xr.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1/ COMPONENT ManPages)

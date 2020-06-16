@@ -59,7 +59,11 @@ find_package(Threads REQUIRED)
 find_package(JsonCpp)
 
 ### All options defined here
+if (ANDROID)
+option(BUILD_LOADER "Build loader" OFF)
+else()
 option(BUILD_LOADER "Build loader" ON)
+endif()
 option(BUILD_ALL_EXTENSIONS "Build loader and layers with all extensions" OFF)
 option(
     BUILD_LOADER_WITH_EXCEPTION_HANDLING
@@ -73,7 +77,9 @@ else()
     option(DYNAMIC_LOADER "Build the loader as a .dll library" ON)
 endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/api_layers")
+	if (NOT ANDROID)
     option(BUILD_API_LAYERS "Build API layers" ON)
+	endif()
 endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests" AND NOT CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
     option(BUILD_TESTS "Build tests" ON)
@@ -142,6 +148,8 @@ elseif(PRESENTATION_BACKEND MATCHES "wayland")
 
     # TODO remove once conformance supports Wayland
     set(BUILD_CONFORMANCE_TESTS OFF)
+elseif(ANDROID)
+	add_definitions(-DXR_USE_PLATFORM_ANDROID)
 endif()
 
 add_library(openxr-all-supported INTERFACE)
@@ -251,7 +259,7 @@ else()
         "${PROJECT_SOURCE_DIR}/specification/scripts:${PROJECT_SOURCE_DIR}/src/scripts:$ENV{PYTHONPATH}"
     )
 endif()
-
+if (NOT ANDROID)
 # General code generation macro used by several targets.
 macro(run_xr_xml_generate dependency output)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${output}" AND NOT BUILD_FORCE_GENERATION)
@@ -309,14 +317,16 @@ macro(gen_xr_layer_json filename layername libfile version desc genbad)
             "Generating API Layer JSON ${filename} using -f ${filename} -n ${layername} -l ${libfile} -a ${MAJOR}.${MINOR} -v ${version} ${genbad} -d ${desc}"
     )
 endmacro()
-
+endif()
 # Custom target for generated dispatch table sources, used by several targets.
 set(GENERATED_OUTPUT)
 set(GENERATED_DEPENDS)
+if(NOT ANDROID)
 run_xr_xml_generate(utility_source_generator.py xr_generated_dispatch_table.h)
 run_xr_xml_generate(utility_source_generator.py xr_generated_dispatch_table.c)
 add_custom_target(xr_global_generated_files DEPENDS ${GENERATED_DEPENDS})
 set_target_properties(xr_global_generated_files PROPERTIES FOLDER ${CODEGEN_FOLDER})
+endif()
 
 set(COMMON_GENERATED_OUTPUT ${GENERATED_OUTPUT})
 if(NOT MSVC)
