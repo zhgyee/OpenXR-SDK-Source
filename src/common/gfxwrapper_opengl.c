@@ -4194,12 +4194,15 @@ static float GetDisplayRefreshRate(const Java_t *java) {
 }
 
 struct android_app *global_app;
-
+static ANativeWindow *g_window;
+void set_window(void* window) {
+    g_window = window;
+}
 bool ksGpuWindow_Create(ksGpuWindow *window, ksDriverInstance *instance, const ksGpuQueueInfo *queueInfo, const int queueIndex,
                         const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
                         const ksGpuSampleCount sampleCount, const int width, const int height, const bool fullscreen) {
     memset(window, 0, sizeof(ksGpuWindow));
-
+    (void)fullscreen;
     window->colorFormat = colorFormat;
     window->depthFormat = depthFormat;
     window->sampleCount = sampleCount;
@@ -4213,7 +4216,7 @@ bool ksGpuWindow_Create(ksGpuWindow *window, ksDriverInstance *instance, const k
     window->lastSwapTime = GetTimeNanoseconds();
 
     window->app = global_app;
-    window->nativeWindow = NULL;
+    window->nativeWindow = g_window;
     window->resumed = false;
 
     if (window->app != NULL) {

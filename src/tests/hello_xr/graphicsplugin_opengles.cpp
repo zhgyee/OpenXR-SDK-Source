@@ -113,7 +113,7 @@ struct OpenGLESGraphicsPlugin : public IGraphicsPlugin {
 
 #if defined(XR_USE_PLATFORM_ANDROID)
         m_graphicsBinding.display = window.display;
-        m_graphicsBinding.config = (EGLConfig)0;
+        m_graphicsBinding.config = window.nativeWindow;//(EGLConfig)0;//workaround:pass native window here
         m_graphicsBinding.context = window.context.context;
 #endif
 

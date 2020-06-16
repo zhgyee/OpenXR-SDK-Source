@@ -27,6 +27,7 @@ android {
             manifest.srcFile "${REMOTE_PROJ_ROOT}/AndroidManifest.xml"
             java.srcDirs = ["${REMOTE_PROJ_ROOT}/java"]
             res.srcDirs = ["${REMOTE_PROJ_ROOT}/res"]
+            jniLibs.srcDirs = ["libs"]
         }
     }
     buildTypes {

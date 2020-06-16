@@ -60,9 +60,10 @@ find_package(JsonCpp)
 
 ### All options defined here
 if (ANDROID)
-option(BUILD_LOADER "Build loader" OFF)
+    add_definitions(-DXR_USE_GRAPHICS_API_OPENGL_ES)
+	option(BUILD_LOADER "Build loader" OFF)
 else()
-option(BUILD_LOADER "Build loader" ON)
+	option(BUILD_LOADER "Build loader" ON)
 endif()
 option(BUILD_ALL_EXTENSIONS "Build loader and layers with all extensions" OFF)
 option(
@@ -150,6 +151,8 @@ elseif(PRESENTATION_BACKEND MATCHES "wayland")
     set(BUILD_CONFORMANCE_TESTS OFF)
 elseif(ANDROID)
 	add_definitions(-DXR_USE_PLATFORM_ANDROID)
+	add_library(openxr-gfxwrapper STATIC common/gfxwrapper_opengl.c common/gfxwrapper_opengl.h)
+    target_include_directories(openxr-gfxwrapper PUBLIC ${PROJECT_SOURCE_DIR}/external/include ${ANDROID_NDK}/sources/android/native_app_glue)
 endif()
 
 add_library(openxr-all-supported INTERFACE)

@@ -26,11 +26,14 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${PROJECT_BINARY_DIR}/include)
 
 if (ANDROID)
+#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Werror -Wall -Wno-unused-function -Wno-unused-parameter")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -Werror -Wall -Wno-unused-function -Wno-unused-parameter")
     add_library(openxr SHARED IMPORTED)
     set_target_properties(openxr PROPERTIES IMPORTED_LOCATION
             ${OPENXR_PATH}/${ANDROID_ABI}/libopenxr.so)
 
     add_library(hello_xr SHARED
+            ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c
             ${LOCAL_SOURCE}
             ${LOCAL_HEADERS}
             ${VULKAN_SHADERS})
@@ -78,7 +81,13 @@ if(VulkanHeaders_INCLUDE_DIRS)
     )
 endif()
 if(ANDROID)
-    target_link_libraries(hello_xr openxr android log)
+    target_link_libraries(hello_xr
+            openxr
+            android
+            log
+            EGL
+            GLESv3
+            )
 else()
     target_link_libraries(hello_xr openxr_loader)
 endif()
