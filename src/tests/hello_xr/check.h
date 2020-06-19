@@ -13,7 +13,7 @@
     if (sourceLocation != nullptr) {
         failureMessage += Fmt("\n    Source: %s", sourceLocation);
     }
-
+    Log::Write(Log::Level::Error, failureMessage);
     throw std::logic_error(failureMessage);
 }
 
