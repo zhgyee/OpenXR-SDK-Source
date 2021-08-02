@@ -1,20 +1,8 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2013-2020 The Khronos Group Inc.
+# Copyright (c) 2013-2021, The Khronos Group Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """Base class for source/header/doc generators, as well as some utility functions."""
 
 from __future__ import unicode_literals
@@ -219,6 +207,9 @@ class GeneratorOptions:
         Default is core API versions, ARB/KHR/OES extensions, all
         other extensions, alphabetically within each group."""
 
+        self.codeGenerator = False
+        """True if this generator makes compilable code"""
+
     def emptyRegex(self, pat):
         """Substitute a regular expression which matches no version
         or extension names for None or the empty string."""
@@ -257,8 +248,14 @@ class OutputGenerator:
         self.diagFile = diagFile
         # Internal state
         self.featureName = None
+        """The current feature name being generated."""
+
         self.genOpts = None
+        """The GeneratorOptions subclass instance."""
+
         self.registry = None
+        """The specification registry object."""
+
         # Used for extension enum value generation
         self.extBase = 1000000000
         self.extBlockSize = 1000
@@ -290,7 +287,7 @@ class OutputGenerator:
             raise UserWarning(
                 '*** FATAL ERROR in Generator.logMsg: unknown level:' + level)
 
-    def enumToValue(self, elem, needsNum):
+    def enumToValue(self, elem, needsNum, parent_for_alias_dereference=None):
         """Parse and convert an `<enum>` tag into a value.
 
         Returns a list:
@@ -361,11 +358,19 @@ class OutputGenerator:
             self.logMsg('diag', 'Enum', name, '-> offset [', numVal, ',', value, ']')
             return [numVal, value]
         if 'alias' in elem.keys():
-            return [None, elem.get('alias')]
+            alias_of = elem.get('alias')
+            if parent_for_alias_dereference is None:
+                return (None, alias_of)
+            siblings = parent_for_alias_dereference.findall('enum')
+            for sib in siblings:
+                sib_name = sib.get('name')
+                if sib_name == alias_of:
+                    return self.enumToValue(sib, needsNum)
+            raise RuntimeError("Could not find the aliased enum value")
         return [None, None]
 
     def checkDuplicateEnums(self, enums):
-        """Sanity check enumerated values.
+        """Check enumerated values.
 
         -  enums - list of `<enum>` Elements
 
@@ -426,6 +431,8 @@ class OutputGenerator:
         """Generate the C declaration for an enum"""
         groupElem = groupinfo.elem
 
+        if groupName == "XrSwapchainUsageFlagBits":
+            print("bla")
         if self.genOpts.conventions.constFlagBits and groupElem.get('type') == 'bitmask':
             return self.buildEnumCDecl_Bitmask(groupinfo, groupName)
         else:
@@ -445,9 +452,13 @@ class OutputGenerator:
             # Convert the value to an integer and use that to track min/max.
             # Values of form -(number) are accepted but nothing more complex.
             # Should catch exceptions here for more complex constructs. Not yet.
-            (_, strVal) = self.enumToValue(elem, True)
+            (_, strVal) = self.enumToValue(elem, True, parent_for_alias_dereference=groupElem)
+            alias_of = elem.get('alias')
             name = elem.get('name')
-            body += "static const {} {} = {};\n".format(flagTypeName, name, strVal)
+            body += "static const {} {} = {};".format(flagTypeName, name, strVal)
+            if alias_of is not None:
+                body += "  // alias of {}".format(alias_of)
+            body += "\n"
 
         # Postfix
 
@@ -569,7 +580,7 @@ class OutputGenerator:
 
         # Open a temporary file for accumulating output.
         if self.genOpts.filename is not None:
-            self.outFile = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False)
+            self.outFile = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', newline='\n', delete=False)
         else:
             self.outFile = sys.stdout
 
@@ -591,7 +602,8 @@ class OutputGenerator:
                 directory = Path(self.genOpts.directory)
                 if not Path.exists(directory):
                     os.makedirs(directory)
-            shutil.move(self.outFile.name, self.genOpts.directory + '/' + self.genOpts.filename)
+            shutil.copy(self.outFile.name, self.genOpts.directory + '/' + self.genOpts.filename)
+            os.remove(self.outFile.name)
         self.genOpts = None
 
     def beginFeature(self, interface, emit):

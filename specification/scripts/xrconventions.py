@@ -1,20 +1,8 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2013-2020 The Khronos Group Inc.
+# Copyright (c) 2013-2021, The Khronos Group Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
 # Working-group-specific style conventions,
 # used in generation.
@@ -22,7 +10,7 @@
 import re
 from pathlib import Path
 
-from conventions import ConventionsBase
+from spec_tools.conventions import ConventionsBase
 
 # Tokenize into "words"
 # The leading named groups are for "special cases" per spec "Implicit Valid Usage" section 2.7.7
@@ -249,7 +237,7 @@ class OpenXRConventions(ConventionsBase):
         """Return a set of directories not to automatically descend into
            when reflowing spec text
         """
-        return ('loader', 'styleguide')
+        return ('styleguide',)
 
     @property
     def zero(self):
@@ -288,3 +276,11 @@ class OpenXRConventions(ConventionsBase):
 
         Must implement."""
         raise NotImplementedError
+
+    @property
+    def duplicate_aliased_structs(self):
+        """
+        Should aliased structs have the original struct definition listed in the
+        generated docs snippet?
+        """
+        return True

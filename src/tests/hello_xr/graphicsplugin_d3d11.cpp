@@ -1,9 +1,13 @@
+// Copyright (c) 2017-2021, The Khronos Group Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 #include "pch.h"
 #include "common.h"
 #include "geometry.h"
 #include "graphicsplugin.h"
 
-#if defined(XR_USE_GRAPHICS_API_D3D12) && !defined(MISSING_DIRECTX_COLORS)
+#if defined(XR_USE_GRAPHICS_API_D3D11) && !defined(MISSING_DIRECTX_COLORS)
 
 #include <common/xr_linear.h>
 #include <DirectXColors.h>
@@ -242,6 +246,8 @@ struct D3D11GraphicsPlugin : public IGraphicsPlugin {
             m_deviceContext->DrawIndexed((UINT)ArraySize(Geometry::c_cubeIndices), 0, 0);
         }
     }
+
+    uint32_t GetSupportedSwapchainSampleCount(const XrViewConfigurationView&) override { return 1; }
 
    private:
     ComPtr<ID3D11Device> m_device;

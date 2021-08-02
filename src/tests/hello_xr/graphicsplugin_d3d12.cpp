@@ -1,3 +1,7 @@
+// Copyright (c) 2017-2021, The Khronos Group Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 #include "pch.h"
 #include "common.h"
 #include "geometry.h"
@@ -131,6 +135,8 @@ class SwapchainImageContext {
     uint64_t GetFrameFenceValue() const { return m_fenceValue; }
     void SetFrameFenceValue(uint64_t fenceValue) { m_fenceValue = fenceValue; }
 
+    void ResetCommandAllocator() { CHECK_HRCMD(m_commandAllocator->Reset()); }
+
     void RequestModelCBuffer(uint32_t requiredSize) {
         if (!m_modelCBuffer || (requiredSize > m_modelCBuffer->GetDesc().Width)) {
             m_modelCBuffer = CreateBuffer(m_d3d12Device, requiredSize, D3D12_HEAP_TYPE_UPLOAD);
@@ -228,7 +234,7 @@ struct D3D12GraphicsPlugin : public IGraphicsPlugin {
                                                   reinterpret_cast<void**>(m_rootSignature.ReleaseAndGetAddressOf())));
 
         SwapchainImageContext initializeContext;
-        std::vector<XrSwapchainImageBaseHeader*> dummy = initializeContext.Create(m_device.Get(), 1);
+        std::vector<XrSwapchainImageBaseHeader*> _ = initializeContext.Create(m_device.Get(), 1);
 
         ComPtr<ID3D12GraphicsCommandList> cmdList;
         CHECK_HRCMD(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, initializeContext.GetCommandAllocator(), nullptr,
@@ -311,7 +317,7 @@ struct D3D12GraphicsPlugin : public IGraphicsPlugin {
 
         // Map every swapchainImage base pointer to this context
         for (auto& base : bases) {
-            m_swapchainImageContextMap.emplace(std::make_pair(base, &swapchainImageContext));
+            m_swapchainImageContextMap[base] = &swapchainImageContext;
         }
 
         return bases;
@@ -407,6 +413,7 @@ struct D3D12GraphicsPlugin : public IGraphicsPlugin {
 
         auto& swapchainContext = *m_swapchainImageContextMap[swapchainImage];
         CpuWaitForFence(swapchainContext.GetFrameFenceValue());
+        swapchainContext.ResetCommandAllocator();
 
         ComPtr<ID3D12GraphicsCommandList> cmdList;
         CHECK_HRCMD(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, swapchainContext.GetCommandAllocator(), nullptr,

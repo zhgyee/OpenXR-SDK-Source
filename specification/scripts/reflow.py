@@ -1,20 +1,8 @@
 #!/usr/bin/python3
 #
-# Copyright (c) 2016-2020 The Khronos Group Inc.
+# Copyright (c) 2016-2021, The Khronos Group Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
 """Used for automatic reflow of spec sources to satisfy the agreed layout to
 minimize git churn. Most of the logic has to do with detecting asciidoc
@@ -75,7 +63,8 @@ pnamePat = re.compile(r'pname:(?P<param>\w+)')
 # Markup that's OK in a contiguous paragraph but otherwise passed through
 #   .anything
 #   === Section Titles
-endParaContinue = re.compile(r'^(\..*|=+ .+)$')
+#   image::path_to_image[attributes]  (apparently a single colon is OK but less idiomatic)
+endParaContinue = re.compile(r'^(\..*|=+ .+|image:.*\[.*\])$')
 
 # Markup for block delimiters whose contents *should* be reformatted
 #   --   (exactly two)  (open block)
@@ -104,7 +93,8 @@ blockPassthrough = re.compile(r'^(\|={3,}|[`]{3}|[-.+/]{4,})$')
 #   :: bullet (no longer supported by asciidoctor 2)
 #   {empty}:: bullet
 #   1. list item
-beginBullet = re.compile(r'^ *([-*.]+|\{empty\}::|::|[0-9]+[.]) ')
+#   <1> source listing callout
+beginBullet = re.compile(r'^ *([-*.]+|\{empty\}::|::|[0-9]+[.]|<([0-9]+)>) ')
 
 # Text that (may) not end sentences
 
@@ -554,7 +544,7 @@ def apiMatch(oldname, newname):
 def reflowFile(filename, args):
     logDiag('reflow: filename', filename)
 
-    lines = loadFile(filename)
+    lines, newline_string = loadFile(filename)
     if lines is None:
         return
 
@@ -568,7 +558,7 @@ def reflowFile(filename, args):
         outFilename = args.outDir + '/' + os.path.basename(filename) + args.suffix
 
     try:
-        fp = open(outFilename, 'w', encoding='utf8')
+        fp = open(outFilename, 'w', encoding='utf8', newline=newline_string)
     except:
         logWarn('Cannot open output file', filename, ':', sys.exc_info()[0])
         return
@@ -671,7 +661,7 @@ def reflowFile(filename, args):
     # Cleanup at end of file
     state.endPara(None)
 
-    # Sanity check on block nesting
+    # Check block nesting
     if len(state.blockStack) > 1:
         logWarn('file', filename,
                 'mismatched asciidoc block delimiters at EOF:',

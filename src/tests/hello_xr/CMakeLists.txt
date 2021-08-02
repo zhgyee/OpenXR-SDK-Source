@@ -16,7 +16,7 @@
 #
 # Author:
 #
-
+# General code generation macro used by several targets.
 file(GLOB LOCAL_HEADERS "*.h")
 file(GLOB LOCAL_SOURCE "*.cpp")
 file(GLOB VULKAN_SHADERS "vulkan_shaders/*.glsl")
@@ -25,18 +25,13 @@ file(GLOB VULKAN_SHADERS "vulkan_shaders/*.glsl")
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${PROJECT_BINARY_DIR}/include)
 
-if (ANDROID)
-#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Werror -Wall -Wno-unused-function -Wno-unused-parameter")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -Werror -Wall -Wno-unused-function -Wno-unused-parameter")
-    add_library(openxr SHARED IMPORTED)
-    set_target_properties(openxr PROPERTIES IMPORTED_LOCATION
-            ${OPENXR_PATH}/${ANDROID_ABI}/libopenxr.so)
-
-    add_library(hello_xr SHARED
-            ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c
-            ${LOCAL_SOURCE}
-            ${LOCAL_HEADERS}
-            ${VULKAN_SHADERS})
+if(ANDROID)
+    add_library(hello_xr MODULE
+        ${LOCAL_SOURCE}
+        ${LOCAL_HEADERS}
+        ${VULKAN_SHADERS}
+        $<TARGET_OBJECTS:android_native_app_glue>)
+    target_link_libraries(hello_xr ${ANDROID_LIBRARY} ${ANDROID_LOG_LIBRARY})
 else()
     add_executable(hello_xr
         ${LOCAL_SOURCE}
@@ -74,19 +69,23 @@ if(ANDROID)
     )
 endif()
 
-if(VulkanHeaders_INCLUDE_DIRS)
+if(GLSLANG_VALIDATOR AND NOT GLSLC_COMMAND)
+    target_compile_definitions(hello_xr PRIVATE USE_GLSLANGVALIDATOR)
+endif()
+
+if(Vulkan_FOUND)
     target_include_directories(hello_xr
         PRIVATE
-        ${VulkanHeaders_INCLUDE_DIRS}
+        ${Vulkan_INCLUDE_DIRS}
     )
 endif()
 if(ANDROID)
     target_link_libraries(hello_xr
-            openxr
             android
             log
             EGL
             GLESv3
+            openxr_loader
             )
 else()
     target_link_libraries(hello_xr openxr_loader)
@@ -94,22 +93,17 @@ endif()
 if(TARGET openxr-gfxwrapper)
     target_link_libraries(hello_xr openxr-gfxwrapper)
 endif()
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+if(WIN32)
     if(MSVC)
         target_compile_definitions(hello_xr PRIVATE _CRT_SECURE_NO_WARNINGS)
         target_compile_options(hello_xr PRIVATE /Zc:wchar_t /Zc:forScope /W4 /WX)
     endif()
     target_link_libraries(hello_xr ole32)
-    if(D3D_D3D11_FOUND AND D3D_DIRECTXCOLORS_INCLUDE_DIR)
-        target_link_libraries(hello_xr ${D3D_D3D11_LIBRARIES})
-        target_include_directories(hello_xr PRIVATE ${D3D_D3D11_INCLUDE_DIR} ${D3D_DIRECTXCOLORS_INCLUDE_DIR})
-    endif()
-    if(D3D_D3D12_FOUND AND D3D_DIRECTXCOLORS_INCLUDE_DIR)
-        target_link_libraries(hello_xr ${D3D_D3D12_LIBRARIES})
-        target_include_directories(hello_xr PRIVATE ${D3D_D3D12_INCLUDE_DIR} ${D3D_DIRECTXCOLORS_INCLUDE_DIR})
-    endif()
-    if(NOT D3D_DIRECTXCOLORS_INCLUDE_DIR)
-        target_compile_definitions(hello_xr PRIVATE -DMISSING_DIRECTX_COLORS)
+    if(MSVC)
+        # Right now can't build this on MinGW because of directxcolors, etc.
+        target_link_libraries(hello_xr d3d11 d3d12 d3dcompiler dxgi)
+    else()
+        target_compile_definitions(hello_xr PRIVATE MISSING_DIRECTX_COLORS)
     endif()
 endif()
 
@@ -117,11 +111,11 @@ if(Vulkan_LIBRARY)
     target_link_libraries(hello_xr ${Vulkan_LIBRARY})
 endif()
 
-if (NOT ANDROID)
-install(TARGETS hello_xr
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(NOT ANDROID)
+    install(TARGETS hello_xr
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    if(NOT WIN32)
+        install(FILES hello_xr.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1/ COMPONENT ManPages)
+    endif()
 endif()
 
-if(NOT WIN32)
-    install(FILES hello_xr.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1/ COMPONENT ManPages)
-endif()

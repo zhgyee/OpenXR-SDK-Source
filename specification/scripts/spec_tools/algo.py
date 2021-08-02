@@ -4,18 +4,6 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
 # Author(s):    Ryan Pavlik <ryan.pavlik@collabora.com>
 """RecursiveMemoize serves as a base class for a function modeled
 as a dictionary computed on-the-fly."""
@@ -79,3 +67,79 @@ class RecursiveMemoize:
 
         DO NOT MODIFY!"""
         return self.d
+
+
+def longest_common_prefix(strings):
+    """
+    Find the longest common prefix of a list of 2 or more strings.
+
+    Args:
+        strings (collection): at least 2 strings.
+
+    Returns:
+        string: The longest string that all submitted strings start with.
+
+    >>> longest_common_prefix(["abcd", "abce"])
+    'abc'
+
+    """
+    assert(len(strings) > 1)
+    a = min(strings)
+    b = max(strings)
+    prefix = []
+    for a_char, b_char in zip(a, b):
+        if a_char == b_char:
+            prefix.append(a_char)
+        else:
+            break
+    return "".join(prefix)
+
+
+def longest_common_token_prefix(strings, delimiter='_'):
+    """
+    Find the longest common token-wise prefix of a list of 2 or more strings.
+
+    Args:
+        strings (collection): at least 2 strings.
+        delimiter (character): the character to split on.
+
+    Returns:
+        string: The longest string that all submitted strings start with.
+
+    >>> longest_common_token_prefix(["xr_abc_123", "xr_abc_567"])
+    'xr_abc_'
+
+    "1" is in the per-character longest common prefix, but 123 != 135,
+    so it's not in the per-token prefix.
+
+    >>> longest_common_token_prefix(["xr_abc_123", "xr_abc_135"])
+    'xr_abc_'
+
+    Here, the prefix is actually the entirety of one string, so no trailing delimiter.
+
+    >>> longest_common_token_prefix(["xr_abc_123", "xr_abc"])
+    'xr_abc'
+
+
+    No common prefix here, because it's per-token:
+
+    >>> longest_common_token_prefix(["abc_123", "ab_123"])
+    ''
+
+    """
+    assert(len(strings) > 1)
+    a = min(strings).split(delimiter)
+    b = max(strings).split(delimiter)
+    prefix_tokens = []
+    for a_token, b_token in zip(a, b):
+        if a_token == b_token:
+            prefix_tokens.append(a_token)
+        else:
+            break
+    if prefix_tokens:
+        prefix = delimiter.join(prefix_tokens)
+        if len(prefix_tokens) < min(len(a), len(b)):
+            # This is truly a prefix, not just one of the strings.
+            prefix += delimiter
+        return prefix
+    return ''

@@ -1,8 +1,10 @@
-// Copyright (c) 2017-2020 The Khronos Group Inc.
+// Copyright (c) 2017-2021, The Khronos Group Inc.
 // Copyright notice at https://www.khronos.org/registry/speccopyright.html
+//
+// SPDX-License-Identifier: CC-BY-4.0
 
 = OpenXR^(R)^  Loader - Design and Operation [DRAFT] {apititle}
-Copyright (c) 2017-2020 The Khronos Group Inc.
+Copyright (c) 2017-2021, The Khronos Group Inc.
 :data-uri:
 :icons: font
 :toc2:
@@ -12,7 +14,8 @@ Copyright (c) 2017-2020 The Khronos Group Inc.
 :imagewidth: 800
 :fullimagewidth: width="800"
 
-Copyright (c) 2017-2020 The Khronos Group Inc. All Rights reserved.
+Copyright (c) 2017-2021, The Khronos Group Inc.
+All Rights reserved.
 
 toc::[]
 
@@ -20,13 +23,14 @@ toc::[]
 [[introduction]]
 = Introduction =
 
-This document contains the necessary information for understanding how
-to develop for, and interact with, the OpenXR loader.  Intended use of
-this document is as a detailed design document and a tool for learning 
-general OpenXR loader behavior.
+This document contains the necessary information for understanding how to
+develop for, and interact with, the OpenXR loader.
+Intended use of this document is as a detailed design document and a tool
+for learning general OpenXR loader behavior.
 
-In the event of any discrepancies between this document and
-the (https://www.khronos.org/registry/OpenXR[OpenXR specification]), that document is authoritative.  
+In the event of any discrepancies between this document and the
+(https://www.khronos.org/registry/OpenXR[OpenXR specification]), that
+document is authoritative.
 
 
 [[introduction-terminology]]

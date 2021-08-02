@@ -4,18 +4,6 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
 # Author(s):    Ryan Pavlik <ryan.pavlik@collabora.com>
 #
 # Purpose:      This script checks some "business logic" in the XML registry.
@@ -23,9 +11,11 @@
 import re
 import sys
 from pathlib import Path
+from typing import Set
 
 from check_spec_links import XREntityDatabase as OrigEntityDatabase
 from reg import Registry
+from spec_tools.algo import longest_common_token_prefix
 from spec_tools.attributes import LengthEntry
 from spec_tools.consistency_tools import XMLChecker
 from spec_tools.util import findNamedElem, getElemName, getElemType
@@ -37,6 +27,21 @@ TWO_CALL_STRING_NAME = "buffer"
 
 CAPACITY_INPUT_RE = re.compile(r'(?P<itemname>[a-z]*)CapacityInput')
 COUNT_OUTPUT_RE = re.compile(r'(?P<itemname>[a-z]*)CountOutput')
+
+_CREATE_PREFIX = "xrCreate"
+_DESTROY_PREFIX = "xrDestroy"
+_TYPEENUM = "XrStructureType"
+
+_CREATE_REQUIRED_CODES = {
+    "XR_ERROR_LIMIT_REACHED",
+    "XR_ERROR_OUT_OF_MEMORY",
+}
+_DESTROY_FORBIDDEN_CODES = {
+    "XR_ERROR_INSTANCE_LOST",
+    "XR_ERROR_SESSION_LOST",
+    "XR_SESSION_LOSS_PENDING",
+    "XR_ERROR_VALIDATION_FAILURE",
+}
 
 
 def get_extension_commands(reg):
@@ -55,13 +60,17 @@ def get_enum_value_names(reg, enum_type):
     return names
 
 
-DESTROY_PREFIX = "xrDestroy"
-TYPEENUM = "XrStructureType"
-
 # Enum type "names" whose value names don't fit the standard pattern.
 ENUM_NAMING_EXCEPTIONS = set((
-    # Intentional exceptions
-    TYPEENUM, "XrResult", "API Constants",
+    # Intentional exceptions:
+    # shortened
+    _TYPEENUM,
+    # shortened/more useful
+    "XrResult",
+    # not actually a single cohesive enum, just a collection of defines
+    "API Constants",
+
+    # Legacy mistake (shortened and not caught before release)
     # See https://gitlab.khronos.org/openxr/openxr/issues/1317
     "XrPerfSettingsNotificationLevelEXT",
 ))
@@ -147,7 +156,8 @@ class Checker(XMLChecker):
                           "XR_SESSION_NOT_FOCUSED",
                           "XR_FRAME_DISCARDED"),
             "XrReferenceSpaceType": "XR_SPACE_BOUNDS_UNAVAILABLE",
-            "XrDuration": "XR_TIMEOUT_EXPIRED"
+            "XrDuration": "XR_TIMEOUT_EXPIRED",
+            "uint32_t": "XR_ERROR_SIZE_INSUFFICIENT",
         }
 
         # Some return codes are related in that only one of a set
@@ -167,8 +177,8 @@ class Checker(XMLChecker):
         db = EntityDatabase()
 
         self.extension_cmds = get_extension_commands(db.registry)
-        self.return_codes = get_enum_value_names(db.registry, 'XrResult')
-        self.structure_types = get_enum_value_names(db.registry, TYPEENUM)
+        self.return_codes: Set[str] = get_enum_value_names(db.registry, 'XrResult')
+        self.structure_types: Set[str] = get_enum_value_names(db.registry, _TYPEENUM)
 
         # Initialize superclass
         super().__init__(entity_db=db, conventions=conventions,
@@ -190,19 +200,42 @@ class Checker(XMLChecker):
     def check_enum_naming(self, enum_type):
         stripped_enum_type, tag = self.strip_extension_tag(enum_type)
         end = "_{}".format(tag) if tag else ""
+        bare_end = None
         if stripped_enum_type.endswith("FlagBits"):
-            end = "_BIT" + end
+            bare_end = "_BIT"
+            end = bare_end + end
             stripped_enum_type = stripped_enum_type.replace("FlagBits", "")
+        # This is how we apply the "convert type to enum value name" transform: pretend it's a structure type,
+        # then replace "XR_TYPE_" with the generic prefix "XR_"
         start = self.conventions.generate_structure_type_from_name(stripped_enum_type).replace("XR_TYPE", "XR") + "_"
 
         value_names = get_enum_value_names(self.db.registry, enum_type)
+
+        # Check that they do start with the right beginning.
         for name in value_names:
+            stripped_name, tag = self.strip_extension_tag(name)
             if not name.startswith(start):
                 self.record_error('Got an enum value whose name does not match the pattern: got', name,
                                   'but expected something that started with', start, 'due to typename being', enum_type)
-            if end and not name.endswith(end):
-                self.record_error('Got an enum value whose name does not match the pattern: got', name,
-                                  'but expected something that ended with', end, 'due to typename being', enum_type)
+
+            if bare_end:
+                # If bare_end is set, end is always non-empty because it means it's a bitmask.
+                assert(end)
+                if not name.endswith(end) and not stripped_name.endswith(bare_end):
+                    self.record_error('Got an enum value whose name does not match the pattern: got', name,
+                                      'but expected something that ended with', end, ', or', bare_end,
+                                      'plus a vendor/author tag, due to typename being', enum_type)
+            elif end:
+                if not name.endswith(end):
+                    self.record_error('Got an enum value whose name does not match the pattern: got', name,
+                                      'but expected something that ended with', end, 'due to typename being', enum_type)
+
+        # Check that the expected beginning is the longest common prefix (meaning the type is named right)
+        if len(value_names) > 1:
+            prefix = longest_common_token_prefix(value_names)
+            if prefix != start:
+                self.record_error('Got an enum whose name does not match the pattern: the type is', enum_type,
+                                  'which would cause values to start with', start, 'but got a different longest common prefix', prefix)
 
     def add_extra_codes(self, types_to_codes):
         """Add any desired entries to the types-to-codes DictOfStringSets
@@ -214,19 +247,32 @@ class Checker(XMLChecker):
             types_to_codes.add(type_name, INVALID_HANDLE)
 
     def get_codes_for_command_and_type(self, cmd_name, type_name):
-        """Return a set of error codes expected due to having
+        """Return a set of return codes expected due to having
         an input argument of type type_name."""
         codes = super().get_codes_for_command_and_type(cmd_name, type_name)
 
         # Filter out any based on the specific command
-        if cmd_name.startswith(DESTROY_PREFIX):
-            # xrDestroyX can't return XR_ERROR_X_LOST or XR_X_LOSS_PENDING
-            # (right?)
-            handle = cmd_name[len(DESTROY_PREFIX):].upper()
-            codes = codes.copy()
-            codes.discard("XR_ERROR_{}_LOST".format(handle))
-            codes.discard("XR_{}_LOSS_PENDING".format(handle))
+        if cmd_name.startswith(_DESTROY_PREFIX):
+            # xrDestroyX should not return XR_ERROR_anything_LOST or XR_anything_LOSS_PENDING
+            codes = {x for x in codes if not x.endswith("_LOST")}
+            codes = {x for x in codes if not x.endswith("_LOSS_PENDING")}
+
         return codes
+
+    def get_required_codes_for_command(self, cmd_name):
+        """Return a set of return codes required due to having a particular name."""
+        codes = set()
+
+        if cmd_name.startswith(_CREATE_PREFIX):
+            codes.update(_CREATE_REQUIRED_CODES)
+
+        return codes
+
+    def get_forbidden_codes_for_command(self, cmd_name):
+        """Return a set of return codes not permittted due to having a particular name."""
+        if cmd_name.startswith(_DESTROY_PREFIX):
+            return _DESTROY_FORBIDDEN_CODES
+        return set()
 
     def check_command_return_codes_basic(self, name, info,
                                          successcodes, errorcodes):
@@ -315,22 +361,26 @@ class Checker(XMLChecker):
 
         # Only valid reason to have more than 1 comma-separated entry in len is for strings,
         # which are named "buffer".
-        if len(length) > 2:
+        if length is None:
             self.record_error('Two-call-idiom call has array parameter', param_name,
-                              'with too many lengths - should be 1 or 2 comma-separated lengths, not', len(length))
-        if len(length) == 2:
-            if not length[1].null_terminated:
-                self.record_error('Two-call-idiom call has two-length array parameter', param_name,
-                                  'whose second length is not "null-terminated":', length[1])
+                              'with no length attribute specified')
+        else:
+            if len(length) > 2:
+                self.record_error('Two-call-idiom call has array parameter', param_name,
+                                  'with too many lengths - should be 1 or 2 comma-separated lengths, not', len(length))
+            if len(length) == 2:
+                if not length[1].null_terminated:
+                    self.record_error('Two-call-idiom call has two-length array parameter', param_name,
+                                      'whose second length is not "null-terminated":', length[1])
 
-            param_type = getElemType(param_elem)
-            if param_type != 'char':
-                self.record_error('Two-call-idiom call has two-length array parameter', param_name,
-                                  'that is not a string:', param_type)
+                param_type = getElemType(param_elem)
+                if param_type != 'char':
+                    self.record_error('Two-call-idiom call has two-length array parameter', param_name,
+                                      'that is not a string:', param_type)
 
-            if param_name != TWO_CALL_STRING_NAME:
-                self.record_error('Two-call-idiom call has two-length array parameter', param_name,
-                                  'that is not named "buffer"')
+                if param_name != TWO_CALL_STRING_NAME:
+                    self.record_error('Two-call-idiom call has two-length array parameter', param_name,
+                                      'that is not named "buffer"')
 
     def check_two_call_command(self, name, info, params):
         """Check a two-call-idiom command."""
@@ -412,6 +462,24 @@ class Checker(XMLChecker):
             if COUNT_OUTPUT_RE.match(param_name) or CAPACITY_INPUT_RE.match(param_name):
                 self.check_two_call_command(name, info, params)
                 break
+
+        return_type = info.elem.find('proto/type')
+        if self.conventions.requires_error_validation(return_type):
+            # This command returns an API result code, so check that it
+            # returns at least the required errors.
+            required_errors = set(self.conventions.required_errors)
+            errorcodes = info.elem.get('errorcodes').split(',')
+            if not required_errors.issubset(set(errorcodes)):
+                self.record_error('Missing required error code')
+
+        if name.startswith(_DESTROY_PREFIX):
+            if len(params) != 1:
+                self.record_error('A destroy command should have exactly one parameter')
+            if params:
+                param = params[0]
+                if param.get("externsync") is None:
+                    self.record_error('A destroy command parameter should have an externsync attribute, probably externsync="true_with_children"')
+
         super().check_command(name, info)
 
     def check_type(self, name, info, category):
@@ -422,11 +490,11 @@ class Checker(XMLChecker):
         elem = info.elem
         type_elts = [elt
                      for elt in elem.findall("member")
-                     if getElemType(elt) == TYPEENUM]
+                     if getElemType(elt) == _TYPEENUM]
         if category == 'struct' and type_elts:
             if len(type_elts) > 1:
                 self.record_error(
-                    "Have more than one member of type", TYPEENUM)
+                    "Have more than one member of type", _TYPEENUM)
             else:
                 type_elt = type_elts[0]
                 val = type_elt.get('values')
@@ -442,10 +510,14 @@ class Checker(XMLChecker):
                                       "but expected", expected_bitvalues)
         super().check_type(name, info, category)
 
-    def check_extension(self, name, info):
+    def check_extension(self, name, info, supported):
         """Check an extension's XML data for consistency.
 
         Called from check."""
+        super().check_extension(name, info, supported)
+        if not supported:
+            return
+
         elem = info.elem
         name_upper = name.upper()
         version_name = "{}_SPEC_VERSION".format(name)
@@ -468,7 +540,7 @@ class Checker(XMLChecker):
                     ver_from_text = str(max(revisions))
                     if ver_from_xml != ver_from_text:
                         self.record_error("Version enum mismatch: spec text indicates", ver_from_text,
-                                        "but XML says", ver_from_xml)
+                                          "but XML says", ver_from_xml)
                 else:
                     if ver_from_xml == '1':
                         self.record_warning(
@@ -476,8 +548,8 @@ class Checker(XMLChecker):
                             filename=fn)
                     else:
                         self.record_error("Cannot find version history in spec text, but XML reports a non-1 version number", ver_from_xml,
-                                        " - make sure the spec text has lines starting exactly like '* Revision 1, ....'",
-                                        filename=fn)
+                                          " - make sure the spec text has lines starting exactly like '* Revision 1, ....'",
+                                          filename=fn)
             except FileNotFoundError:
                 # This is OK: just means we can't check against the spec text.
                 pass
@@ -494,11 +566,11 @@ class Checker(XMLChecker):
                 self.record_error("Incorrect name enum: expected", expected_name,
                                   "got", name_val)
 
-        super().check_extension(name, elem)
 
+if __name__ == "__main__":
 
-ckr = Checker()
-ckr.check()
+    ckr = Checker()
+    ckr.check()
 
-if ckr.fail:
-    sys.exit(1)
+    if ckr.fail:
+        sys.exit(1)

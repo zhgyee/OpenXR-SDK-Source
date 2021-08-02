@@ -1,3 +1,7 @@
+// Copyright (c) 2017-2021, The Khronos Group Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 #include "pch.h"
 #include "common.h"
 #include "options.h"
@@ -32,7 +36,7 @@ void ShowHelp() {
     Log::Write(Log::Level::Info,
                "HelloXr --graphics|-g <Graphics API> [--formfactor|-ff <Form factor>] [--viewconfig|-vc <View config>] "
                "[--blendmode|-bm <Blend mode>] [--space|-s <Space>] [--verbose|-v]");
-    Log::Write(Log::Level::Info, "Graphics APIs:            D3D11, D3D12, OpenGLES, OpenGL, Vulkan");
+    Log::Write(Log::Level::Info, "Graphics APIs:            D3D11, D3D12, OpenGLES, OpenGL, Vulkan2, Vulkan");
     Log::Write(Log::Level::Info, "Form factors:             Hmd, Handheld");
     Log::Write(Log::Level::Info, "View configurations:      Mono, Stereo");
     Log::Write(Log::Level::Info, "Environment blend modes:  Opaque, Additive, AlphaBlend");
@@ -185,6 +189,19 @@ void android_main(struct android_app* app) {
 
         // Initialize the OpenXR program.
         std::shared_ptr<IOpenXrProgram> program = CreateOpenXrProgram(options, platformPlugin, graphicsPlugin);
+
+        // Initialize the loader for this platform
+        PFN_xrInitializeLoaderKHR initializeLoader = nullptr;
+        if (XR_SUCCEEDED(
+                xrGetInstanceProcAddr(XR_NULL_HANDLE, "xrInitializeLoaderKHR", (PFN_xrVoidFunction*)(&initializeLoader)))) {
+            XrLoaderInitInfoAndroidKHR loaderInitInfoAndroid;
+            memset(&loaderInitInfoAndroid, 0, sizeof(loaderInitInfoAndroid));
+            loaderInitInfoAndroid.type = XR_TYPE_LOADER_INIT_INFO_ANDROID_KHR;
+            loaderInitInfoAndroid.next = NULL;
+            loaderInitInfoAndroid.applicationVM = app->activity->vm;
+            loaderInitInfoAndroid.applicationContext = app->activity->clazz;
+            initializeLoader((const XrLoaderInitInfoBaseHeaderKHR*)&loaderInitInfoAndroid);
+        }
 
         program->CreateInstance();
         appState.program = program;

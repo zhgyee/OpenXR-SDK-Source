@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2020 The Khronos Group Inc.
+// Copyright (c) 2017-2021, The Khronos Group Inc.
 // Copyright (c) 2017-2019 Valve Corporation
 // Copyright (c) 2017-2019 LunarG, Inc.
 //
@@ -415,7 +415,7 @@ void InvalidStructureType(GenValidUsageXrInstanceInfo *instance_info, const std:
     oss_type << structure_name << " has an invalid XrStructureType ";
     oss_type << Uint32ToHexString(static_cast<uint32_t>(type));
     if (expected != 0) {
-        oss_type << ", expected " << Uint32ToHexString(static_cast<uint32_t>(type));
+        oss_type << ", expected " << Uint32ToHexString(static_cast<uint32_t>(expected));
         oss_type << " (" << expected_name << ")";
     }
     if (vuid != nullptr) {
@@ -453,7 +453,7 @@ std::string StructTypesToString(GenValidUsageXrInstanceInfo *instance_info, cons
 //              "VUID-xrEnumerateInstanceExtensionProperties-propertyCountOutput-parameter"
 //              "VUID-xrEnumerateInstanceExtensionProperties-properties-parameter"
 
-XrResult CoreValidationXrCreateInstance(const XrInstanceCreateInfo * /*info*/, XrInstance * /*instance*/) {
+XRAPI_ATTR XrResult XRAPI_CALL CoreValidationXrCreateInstance(const XrInstanceCreateInfo * /*info*/, XrInstance * /*instance*/) {
     // Shouldn't be called, coreValidationXrCreateApiLayerInstance should called instead
     return XR_SUCCESS;
 }
@@ -470,8 +470,9 @@ GenValidUsageXrInstanceInfo::~GenValidUsageXrInstanceInfo() { delete dispatch_ta
 
 // See if there is a debug utils create structure in the "next" chain
 
-XrResult CoreValidationXrCreateApiLayerInstance(const XrInstanceCreateInfo *info, const struct XrApiLayerCreateInfo *apiLayerInfo,
-                                                XrInstance *instance) {
+XRAPI_ATTR XrResult XRAPI_CALL CoreValidationXrCreateApiLayerInstance(const XrInstanceCreateInfo *info,
+                                                                      const struct XrApiLayerCreateInfo *apiLayerInfo,
+                                                                      XrInstance *instance) {
     try {
         XrApiLayerCreateInfo new_api_layer_info = {};
         XrResult validation_result = XR_SUCCESS;
@@ -480,13 +481,15 @@ XrResult CoreValidationXrCreateApiLayerInstance(const XrInstanceCreateInfo *info
 
         if (!g_record_info.initialized) {
             g_record_info.initialized = true;
-            g_record_info.type = RECORD_NONE;
+            g_record_info.type = RECORD_TEXT_COUT;
         }
 
         std::string export_type = PlatformUtilsGetEnv("XR_CORE_VALIDATION_EXPORT_TYPE");
         std::string file_name = PlatformUtilsGetEnv("XR_CORE_VALIDATION_FILE_NAME");
         if (!file_name.empty()) {
             g_record_info.file_name = file_name;
+            g_record_info.type = RECORD_TEXT_FILE;
+            user_defined_output = true;
         }
 
         if (!export_type.empty()) {
@@ -494,22 +497,17 @@ XrResult CoreValidationXrCreateApiLayerInstance(const XrInstanceCreateInfo *info
             std::transform(export_type.begin(), export_type.end(), export_type_lower.begin(),
                            [](unsigned char c) { return std::tolower(c); });
 
-            std::cerr << "Core Validation output type: " << export_type_lower
-                      << ", first time = " << (first_time ? "true" : "false") << std::endl;
-            if (export_type_lower == "text") {
-                if (!g_record_info.file_name.empty()) {
-                    g_record_info.type = RECORD_TEXT_FILE;
-                } else {
-                    g_record_info.type = RECORD_TEXT_COUT;
-                }
-                user_defined_output = true;
-            } else if (export_type_lower == "html" && first_time) {
+            if (export_type_lower == "html" && first_time) {
                 g_record_info.type = RECORD_HTML_FILE;
                 if (!CoreValidationWriteHtmlHeader()) {
                     return XR_ERROR_INITIALIZATION_FAILED;
                 }
+            } else if (export_type_lower == "none") {
+                g_record_info.type = RECORD_NONE;
             }
         }
+        std::cerr << "Core Validation output type: " << (export_type.empty() ? "text" : export_type)
+                  << ", first time = " << (first_time ? "true" : "false") << std::endl;
 
         // Call the generated pre valid usage check.
         validation_result = GenValidUsageInputsXrCreateInstance(info, instance);
@@ -580,7 +578,7 @@ void EraseAllInstanceTableMapElements(GenValidUsageXrInstanceInfo *search_value)
     map_erase_if(map, [=](value_t const &data) { return data.second.get() == search_value; });
 }
 
-XrResult CoreValidationXrDestroyInstance(XrInstance instance) {
+XRAPI_ATTR XrResult XRAPI_CALL CoreValidationXrDestroyInstance(XrInstance instance) {
     GenValidUsageInputsXrDestroyInstance(instance);
     if (XR_NULL_HANDLE != instance) {
         auto info_with_lock = g_instance_info.getWithLock(instance);
@@ -596,7 +594,8 @@ XrResult CoreValidationXrDestroyInstance(XrInstance instance) {
     return result;
 }
 
-XrResult CoreValidationXrCreateSession(XrInstance instance, const XrSessionCreateInfo *createInfo, XrSession *session) {
+XRAPI_ATTR XrResult XRAPI_CALL CoreValidationXrCreateSession(XrInstance instance, const XrSessionCreateInfo *createInfo,
+                                                             XrSession *session) {
     try {
         XrResult test_result = GenValidUsageInputsXrCreateSession(instance, createInfo, session);
         if (XR_SUCCESS != test_result) {
@@ -697,7 +696,8 @@ void CoreValidationDeleteSessionLabels(XrSession session) {
 }
 
 // ---- XR_EXT_debug_utils extension commands
-XrResult CoreValidationXrSetDebugUtilsObjectNameEXT(XrInstance instance, const XrDebugUtilsObjectNameInfoEXT *nameInfo) {
+XRAPI_ATTR XrResult XRAPI_CALL CoreValidationXrSetDebugUtilsObjectNameEXT(XrInstance instance,
+                                                                          const XrDebugUtilsObjectNameInfoEXT *nameInfo) {
     try {
         XrResult result = GenValidUsageInputsXrSetDebugUtilsObjectNameEXT(instance, nameInfo);
         if (!XR_UNQUALIFIED_SUCCESS(result)) {
@@ -718,8 +718,9 @@ XrResult CoreValidationXrSetDebugUtilsObjectNameEXT(XrInstance instance, const X
     }
 }
 
-XrResult CoreValidationXrCreateDebugUtilsMessengerEXT(XrInstance instance, const XrDebugUtilsMessengerCreateInfoEXT *createInfo,
-                                                      XrDebugUtilsMessengerEXT *messenger) {
+XRAPI_ATTR XrResult XRAPI_CALL CoreValidationXrCreateDebugUtilsMessengerEXT(XrInstance instance,
+                                                                            const XrDebugUtilsMessengerCreateInfoEXT *createInfo,
+                                                                            XrDebugUtilsMessengerEXT *messenger) {
     try {
         XrResult result = GenValidUsageInputsXrCreateDebugUtilsMessengerEXT(instance, createInfo, messenger);
         if (!XR_UNQUALIFIED_SUCCESS(result)) {
@@ -745,7 +746,7 @@ XrResult CoreValidationXrCreateDebugUtilsMessengerEXT(XrInstance instance, const
     }
 }
 
-XrResult CoreValidationXrDestroyDebugUtilsMessengerEXT(XrDebugUtilsMessengerEXT messenger) {
+XRAPI_ATTR XrResult XRAPI_CALL CoreValidationXrDestroyDebugUtilsMessengerEXT(XrDebugUtilsMessengerEXT messenger) {
     try {
         XrResult result = GenValidUsageInputsXrDestroyDebugUtilsMessengerEXT(messenger);
         if (!XR_UNQUALIFIED_SUCCESS(result)) {
@@ -773,7 +774,8 @@ XrResult CoreValidationXrDestroyDebugUtilsMessengerEXT(XrDebugUtilsMessengerEXT 
     }
 }
 
-XrResult CoreValidationXrSessionBeginDebugUtilsLabelRegionEXT(XrSession session, const XrDebugUtilsLabelEXT *labelInfo) {
+XRAPI_ATTR XrResult XRAPI_CALL CoreValidationXrSessionBeginDebugUtilsLabelRegionEXT(XrSession session,
+                                                                                    const XrDebugUtilsLabelEXT *labelInfo) {
     XrResult test_result = GenValidUsageInputsXrSessionBeginDebugUtilsLabelRegionEXT(session, labelInfo);
     if (XR_SUCCESS != test_result) {
         return test_result;
@@ -788,7 +790,7 @@ XrResult CoreValidationXrSessionBeginDebugUtilsLabelRegionEXT(XrSession session,
     return GenValidUsageNextXrSessionBeginDebugUtilsLabelRegionEXT(session, labelInfo);
 }
 
-XrResult CoreValidationXrSessionEndDebugUtilsLabelRegionEXT(XrSession session) {
+XRAPI_ATTR XrResult XRAPI_CALL CoreValidationXrSessionEndDebugUtilsLabelRegionEXT(XrSession session) {
     XrResult test_result = GenValidUsageInputsXrSessionEndDebugUtilsLabelRegionEXT(session);
     if (XR_SUCCESS != test_result) {
         return test_result;
@@ -803,7 +805,8 @@ XrResult CoreValidationXrSessionEndDebugUtilsLabelRegionEXT(XrSession session) {
     return GenValidUsageNextXrSessionEndDebugUtilsLabelRegionEXT(session);
 }
 
-XrResult CoreValidationXrSessionInsertDebugUtilsLabelEXT(XrSession session, const XrDebugUtilsLabelEXT *labelInfo) {
+XRAPI_ATTR XrResult XRAPI_CALL CoreValidationXrSessionInsertDebugUtilsLabelEXT(XrSession session,
+                                                                               const XrDebugUtilsLabelEXT *labelInfo) {
     XrResult test_result = GenValidUsageInputsXrSessionInsertDebugUtilsLabelEXT(session, labelInfo);
     if (XR_SUCCESS != test_result) {
         return test_result;

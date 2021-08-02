@@ -1,5 +1,11 @@
 # OpenXR™ Software Development Kit (SDK) Sources Project
 
+<!--
+Copyright (c) 2017-2021, The Khronos Group Inc.
+
+SPDX-License-Identifier: CC-BY-4.0
+-->
+
 This repository contains source code and build scripts for implementations
 of the OpenXR loader, validation layers, and code samples.
 
@@ -29,8 +35,18 @@ and omits the samples, tests, and API layers, as they are not typically built as
 - `src/loader` - OpenXR loader code
 - `src/tests` - various test code (if looking for sample code start with `hello_xr/`)
 
-Currently the best sample code is in [src/tests/hello_xr/](https://github.com/KhronosGroup/OpenXR-SDK-Source/tree/master/src/tests/hello_xr).  More will be added in the future.
+Currently the best sample code is in [src/tests/hello_xr/](src/tests/hello_xr).  More will be added in the future.
 
 ## Building
 
-See [BUILDING.md](https://github.com/KhronosGroup/OpenXR-SDK-Source/blob/master/BUILDING.md)
+See [BUILDING.md](BUILDING.md)
+
+## Note about `git blame`
+
+We are tracking "bulk commits" in the `.git-blame-ignore-revs` file, for better
+git blame output. Sadly it appears that web interfaces do not yet handle this
+file, but you can if using the command line. See
+[--ignore-revs-file docs](https://git-scm.com/docs/git-blame#Documentation/git-blame.txt---ignore-revs-fileltfilegt)
+for details, and
+[this blog post about ignore-revs](https://www.moxio.com/blog/43/ignoring-bulk-change-commits-with-git-blame)
+for some useful usage details.

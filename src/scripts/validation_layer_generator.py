@@ -42,6 +42,8 @@ VALID_USAGE_MANUALLY_DEFINED = set((
     'xrSessionInsertDebugUtilsLabelEXT',
 ))
 
+_CHAR_RE = re.compile(r"\bchar\b")
+
 
 # ValidationSourceOutputGenerator - subclass of AutomaticSourceOutputGenerator.
 
@@ -310,12 +312,23 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
             enum_value_validate += 'switch (value) {\n'
             indent += 1
             for cur_value in enum_tuple.values:
+                avoid_dupe = None
+                if cur_value.alias:
+                    aliased = [x for x in enum_tuple.values if x.name == cur_value.alias]
+                    aliased_value = aliased[0]
+                    if aliased_value.protect_value and aliased_value.protect_value != cur_value.protect_value and aliased_value.protect_value != enum_tuple.protect_value:
+                        avoid_dupe = aliased_value.protect_string
+                        enum_value_validate += '#if !(%s)\n' % avoid_dupe
+                    else:
+                        # This would unconditionally cause a duplicate case
+                        continue
+                value_protect = None
                 if cur_value.protect_value and enum_tuple.protect_value != cur_value.protect_value:
-                    enum_value_validate += '#if %s\n' % cur_value.protect_string
+                    value_protect = cur_value.protect_string
+                    enum_value_validate += '#if %s\n' % value_protect
+
                 enum_value_validate += self.writeIndent(indent)
                 enum_value_validate += 'case %s:\n' % cur_value.name
-                if cur_value.protect_value and enum_tuple.protect_value != cur_value.protect_value:
-                    enum_value_validate += '#endif // %s\n' % cur_value.protect_string
                 if cur_value.ext_name and cur_value.ext_name != checked_extension and not self.isCoreExtensionName(cur_value.ext_name):
                     indent += 1
                     enum_value_validate += self.writeIndent(indent)
@@ -361,6 +374,10 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
                 else:
                     enum_value_validate += self.writeIndent(indent + 1)
                     enum_value_validate += 'return true;\n'
+                if value_protect:
+                    enum_value_validate += '#endif // %s\n' % value_protect
+                if avoid_dupe:
+                    enum_value_validate += '#endif // !(%s)\n' % avoid_dupe
             indent -= 1
             enum_value_validate += self.writeIndent(indent)
             enum_value_validate += 'default:\n'
@@ -467,34 +484,43 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
         # Validate the rest of this struct
         next_chain_info += self.writeIndent(1)
         next_chain_info += 'switch (next_header->type) {\n'
-        for enum_tuple in self.api_enums:
-            if enum_tuple.name == 'XrStructureType':
-                if enum_tuple.protect_value:
-                    next_chain_info += '#if %s\n' % enum_tuple.protect_string
-                for cur_value in enum_tuple.values:
-                    struct_define_name = self.genXrStructureName(
-                        cur_value.name)
-                    if struct_define_name:
-                        struct_tuple = self.getStruct(struct_define_name)
-                        if struct_tuple.protect_value:
-                            next_chain_info += '#if %s\n' % struct_tuple.protect_string
-                        next_chain_info += self.writeIndent(2)
-                        next_chain_info += 'case %s:\n' % cur_value.name
-                        next_chain_info += self.writeIndent(3)
-                        next_chain_info += 'if (XR_SUCCESS != ValidateXrStruct(instance_info, command_name, objects_info, false,\n'
-                        next_chain_info += self.writeIndent(3)
-                        next_chain_info += '                                   reinterpret_cast<const %s*>(next))) {\n' % struct_define_name
-                        next_chain_info += self.writeIndent(4)
-                        next_chain_info += 'return NEXT_CHAIN_RESULT_ERROR;\n'
-                        next_chain_info += self.writeIndent(3)
-                        next_chain_info += '}\n'
-                        next_chain_info += self.writeIndent(3)
-                        next_chain_info += 'break;\n'
-                        if struct_tuple.protect_value:
-                            next_chain_info += '#endif // %s\n' % struct_tuple.protect_string
-                if enum_tuple.protect_value:
-                    next_chain_info += '#endif //%s\n' % enum_tuple.protect_string
-                break
+        enum_tuple = [x for x in self.api_enums if x.name == 'XrStructureType'][0]
+        for cur_value in enum_tuple.values:
+            struct_define_name = self.genXrStructureName(
+                cur_value.name)
+            if not struct_define_name:
+                continue
+
+            struct_tuple = self.getStruct(struct_define_name)
+            avoid_dupe = None
+            if cur_value.alias:
+                aliased_value = [x for x in enum_tuple.values if x.name == cur_value.alias][0]
+                if aliased_value.protect_value and aliased_value.protect_value != cur_value.protect_value and aliased_value.protect_value != struct_tuple.protect_value:
+                    avoid_dupe = aliased_value.protect_string
+                    next_chain_info += '#if !(%s)\n' % avoid_dupe
+                else:
+                    # This would unconditionally cause a duplicate case
+                    continue
+            if struct_tuple.protect_value:
+                next_chain_info += '#if %s\n' % struct_tuple.protect_string
+
+            next_chain_info += self.writeIndent(2)
+            next_chain_info += 'case %s:\n' % cur_value.name
+            next_chain_info += self.writeIndent(3)
+            next_chain_info += 'if (XR_SUCCESS != ValidateXrStruct(instance_info, command_name, objects_info, false,\n'
+            next_chain_info += self.writeIndent(3)
+            next_chain_info += '                                   reinterpret_cast<const %s*>(next))) {\n' % struct_define_name
+            next_chain_info += self.writeIndent(4)
+            next_chain_info += 'return NEXT_CHAIN_RESULT_ERROR;\n'
+            next_chain_info += self.writeIndent(3)
+            next_chain_info += '}\n'
+            next_chain_info += self.writeIndent(3)
+            next_chain_info += 'break;\n'
+            if struct_tuple.protect_value:
+                next_chain_info += '#endif // %s\n' % struct_tuple.protect_string
+            if avoid_dupe:
+                next_chain_info += '#endif // !(%s)\n' % avoid_dupe
+
         next_chain_info += self.writeIndent(2)
         next_chain_info += 'default:\n'
         next_chain_info += self.writeIndent(3)
@@ -553,7 +579,7 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
                         validation_header_info += '\n// ---- %s extension commands\n' % cur_cmd.ext_name
                     cur_extension_name = cur_cmd.ext_name
 
-                prototype = self.replace_ATTR_CALL(cur_cmd.cdecl)
+                prototype = cur_cmd.cdecl
 
                 # We need to always export xrGetInstanceProcAddr, even though we automatically generate it.
                 # Also, we really only need the core function, not the others.
@@ -1018,13 +1044,12 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
         validate_struct_next += self.writeIndent(indent + 1)
         validate_struct_next += '                    objects_info,\n'
         validate_struct_next += self.writeIndent(indent + 1)
-        validate_struct_next += '"Multiple structures of the same type(s) in \\"next\\" chain for %s struct");\n' %  struct_type
+        validate_struct_next += '"Multiple structures of the same type(s) in \\"next\\" chain for %s struct");\n' % struct_type
         validate_struct_next += self.writeIndent(indent + 1)
         validate_struct_next += 'xr_result = XR_ERROR_VALIDATION_FAILURE;\n'
         validate_struct_next += self.writeIndent(indent)
         validate_struct_next += '}\n'
         return validate_struct_next
-
 
     # Generate inline C++ code to check if a pointer to a variable or array is valid.
     #   self                the ValidationSourceOutputGenerator object
@@ -1037,6 +1062,7 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
     #   short_count_var     the short name of the array count variable (if this is an array), or None
     #   is_in_cmd           Boolean indicating that this is being called directly from inside a command
     #   indent              the number of "tabs" to space in for the resulting C+ code.
+
     def writeValidatePointerArrayNonNull(self, cmd_struct_name, member_param_name, member_param_type,
                                          pointer_to_check, full_count_var, short_count_var, is_in_cmd,
                                          indent):
@@ -1292,7 +1318,7 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
         inline_validate_handle += self.writeIndent(indent) + "// writeValidateInlineHandleValidation\n"
         inline_validate_handle += self.writeIndent(indent)
         inline_validate_handle += 'ValidateXrHandleResult handle_result = Verify%sHandle(%s%s);\n' % (member_param.type, adjust_to_pointer,
-                                                                               mem_par_desc_name)
+                                                                                                      mem_par_desc_name)
         wrote_first_if = False
         if member_param.is_optional:
             # If we have to return on a Handle that has a value of XR_NULL_HANDLE, do so.
@@ -1532,14 +1558,9 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
         elif self.isStruct(param_member.type) and not self.isStructAlwaysValid(param_member.type):
             param_member_contents += loop_string
             wrote_loop = True
-            is_relation_group = False
-            relation_group = None
             # Check to see if this struct is the base of a relation group
-            for cur_rel_group in self.struct_relation_groups:
-                if cur_rel_group.generic_struct_name == param_member.type:
-                    relation_group = cur_rel_group
-                    is_relation_group = True
-                    break
+            relation_group = self.getRelationGroupForBaseStruct(param_member.type)
+            is_relation_group = (relation_group is not None)
 
             # If this struct is the base of a relation group, check to see if this call really should go to any one of
             # it's children instead of itself.
@@ -1552,6 +1573,11 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
                     param_member_contents += self.writeIndent(indent)
                     param_member_contents += '// Validate if %s is a child structure of type %s and it is valid\n' % (
                         param_member.type, child)
+
+                    param_member_contents += self.writeIndent(indent)
+                    param_member_contents += '{\n'
+                    indent = indent + 1
+
                     param_member_contents += self.writeIndent(indent)
 
                     base_child_struct_name = undecorate(child)
@@ -1671,6 +1697,10 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
                     param_member_contents += self.writeIndent(indent)
                     param_member_contents += '}\n'
 
+                    indent = indent - 1
+                    param_member_contents += self.writeIndent(indent)
+                    param_member_contents += '}\n'
+
                     if child_struct.protect_value:
                         param_member_contents += '#endif // %s\n' % child_struct.protect_string
 
@@ -1757,13 +1787,13 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
                     param_member_contents += loop_string
                     wrote_loop = True
                 param_member_contents += self.writeValidateInlineEnum(struct_command_name,
-                                                                    command_name_variable,
-                                                                    param_member.type,
-                                                                    param_member.name,
-                                                                    prefixed_param_member_name,
-                                                                    is_pointer,
-                                                                    is_command,
-                                                                    indent)
+                                                                      command_name_variable,
+                                                                      param_member.type,
+                                                                      param_member.name,
+                                                                      prefixed_param_member_name,
+                                                                      is_pointer,
+                                                                      is_command,
+                                                                      indent)
         elif self.isFlagType(param_member.type):
             param_member_contents += self.writeValidateInlineFlag(struct_command_name,
                                                                   command_name_variable,
@@ -1783,7 +1813,7 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
                 param_member_contents += self.writeIndent(indent)
                 param_member_contents += '// NOTE: Can\'t validate "VUID-%s-%s-parameter" type\n' % (struct_command_name,
                                                                                                      param_member.name)
-            elif param_member.is_static_array and "char" in param_member.type:
+            elif param_member.is_static_array and _CHAR_RE.search(param_member.type):
                 param_member_contents += self.writeIndent(indent)
                 param_member_contents += 'if (%s < std::strlen(%s)) {\n' % (
                     param_member.static_array_sizes[0], prefixed_param_member_name)
@@ -1821,6 +1851,7 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
 
     # Write the validation function for every struct we know about.
     #   self            the ValidationSourceOutputGenerator object
+
     def writeValidateStructFuncs(self):
         struct_check = ''
         # Now write out the actual functions
@@ -1829,7 +1860,7 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
                 continue
 
             indent = 1
-            is_relation_group = False
+            is_base_type = False
             relation_group = None
 
             if xr_struct.protect_value:
@@ -1841,15 +1872,13 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
             struct_check += '    XrResult xr_result = XR_SUCCESS;\n'
 
             # Check to see if this struct is the base of a relation group
-            for cur_rel_group in self.struct_relation_groups:
-                if cur_rel_group.generic_struct_name == xr_struct.name:
-                    relation_group = cur_rel_group
-                    is_relation_group = True
-                    break
+            relation_group = self.getRelationGroupForBaseStruct(xr_struct.name)
+            if relation_group is not None:
+                is_base_type = True
 
             # If this struct is the base of a relation group, check to see if this call really should go to any one of
             # it's children instead of itself.
-            if is_relation_group:
+            if is_base_type:
                 for member in xr_struct.members:
                     if member.name == 'next':
                         struct_check += self.writeIndent(indent)
@@ -1899,7 +1928,7 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
                     struct_check += '}\n'
                     if child_struct.protect_value:
                         struct_check += '#endif // %s\n' % child_struct.protect_string
-                
+
                 struct_check += self.writeIndent(indent)
                 struct_check += 'InvalidStructureType(instance_info, command_name, objects_info, "%s",\n' % xr_struct.name
                 struct_check += self.writeIndent(indent)
@@ -1907,6 +1936,8 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
                 struct_check += self.writeIndent(indent)
                 struct_check += 'return XR_ERROR_VALIDATION_FAILURE;\n'
                 struct_check += '}\n\n'
+                if xr_struct.protect_value:
+                    struct_check += '#endif // %s\n' % xr_struct.protect_string
                 continue
 
             first_member_handle_tuple = None
@@ -2123,13 +2154,13 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
             first_handle_name = self.getFirstHandleName(first_param)
             obj_type = self.genXrObjectType(first_param.type)
             pre_validate_func += self.writeIndent(indent)
-            pre_validate_func += 'objects_info.emplace_back(%s, %s);\n\n'% (first_handle_name, obj_type)
+            pre_validate_func += 'objects_info.emplace_back(%s, %s);\n\n' % (first_handle_name, obj_type)
 
             # Must verify this param first.
             # Can skip validating it later.
 
             pre_validate_func += self.outputParamMemberContents(True, cur_command.name, first_param, '',
-                                                                'nullptr', # no instance_info yet!
+                                                                'nullptr',  # no instance_info yet!
                                                                 command_name_string,
                                                                 True,
                                                                 first_param,
@@ -2353,9 +2384,6 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
         pre_validate_func += '}\n\n'
         return pre_validate_func
 
-    def replace_ATTR_CALL(self, decl):
-        return decl.replace(self.genOpts.apicall, "").replace(self.genOpts.apientry, "")
-
     # Generate C++ code to call down to the next layer/loader terminator/runtime
     #   self            the ValidationSourceOutputGenerator object
     #   cur_command     the command generated in automatic_source_generator.py to validate
@@ -2370,7 +2398,7 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
         # entry into the dispatch table so it's a special case all around.
         if 'xrCreateInstance' in cur_command.name:
             return ''
-        prototype = self.replace_ATTR_CALL(cur_command.cdecl.replace(" xr", " GenValidUsageNextXr"))
+        prototype = cur_command.cdecl.replace(" xr", " GenValidUsageNextXr")
         prototype = prototype.replace(";", " {")
         next_validate_func += '%s\n' % (prototype)
         if has_return:
@@ -2513,7 +2541,7 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
     #   has_return      Boolean indicating that the command must return a value (usually XrResult)
     def genAutoValidateFunc(self, cur_command, has_return):
         auto_validate_func = ''
-        prototype = self.replace_ATTR_CALL(cur_command.cdecl.replace(" xr", " GenValidUsageXr"))
+        prototype = cur_command.cdecl.replace(" xr", " GenValidUsageXr")
         prototype = prototype.replace(";", " {")
         auto_validate_func += '%s\n' % (prototype)
         auto_validate_func += self.writeIndent(1)
@@ -2672,34 +2700,10 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
                     validation_source_funcs += '#endif // %s\n' % cur_cmd.protect_string
                     validation_source_funcs += '\n'
 
-        validation_source_funcs += '\n// API Layer\'s xrGetInstanceProcAddr\n'
-        validation_source_funcs += 'XrResult GenValidUsageXrGetInstanceProcAddr(\n'
-        validation_source_funcs += '    XrInstance          instance,\n'
-        validation_source_funcs += '    const char*         name,\n'
-        validation_source_funcs += '    PFN_xrVoidFunction* function) {\n'
-        validation_source_funcs += '    try {\n'
-        validation_source_funcs += '        std::string func_name = name;\n'
-        validation_source_funcs += '        std::vector<GenValidUsageXrObjectInfo> objects;\n'
-        validation_source_funcs += '        if (g_instance_info.verifyHandle(&instance) == VALIDATE_XR_HANDLE_INVALID) {\n'
-        validation_source_funcs += '            // Make sure the instance is valid if it is not XR_NULL_HANDLE\n'
-        validation_source_funcs += '            std::vector<GenValidUsageXrObjectInfo> objects;\n'
-        validation_source_funcs += '            objects.resize(1);\n'
-        validation_source_funcs += '            objects[0].handle = MakeHandleGeneric(instance);\n'
-        validation_source_funcs += '            objects[0].type = XR_OBJECT_TYPE_INSTANCE;\n'
-        validation_source_funcs += '            CoreValidLogMessage(nullptr, "VUID-xrGetInstanceProcAddr-instance-parameter",\n'
-        validation_source_funcs += '                                VALID_USAGE_DEBUG_SEVERITY_ERROR, "xrGetInstanceProcAddr", objects,\n'
-        validation_source_funcs += '                                "Invalid instance handle provided.");\n'
-        validation_source_funcs += '        }\n'
-        validation_source_funcs += '        // NOTE: Can\'t validate "VUID-xrGetInstanceProcAddr-name-parameter" null-termination\n'
-        validation_source_funcs += '        // If we setup the function, just return\n'
-        validation_source_funcs += '        if (function == nullptr) {\n'
-        validation_source_funcs += '            CoreValidLogMessage(nullptr, "VUID-xrGetInstanceProcAddr-function-parameter",\n'
-        validation_source_funcs += '                                VALID_USAGE_DEBUG_SEVERITY_ERROR, "xrGetInstanceProcAddr", objects,\n'
-        validation_source_funcs += '                                "function is NULL");\n'
-        validation_source_funcs += '            return XR_ERROR_VALIDATION_FAILURE;\n'
-        validation_source_funcs += '        }\n'
+        validation_source_funcs += 'static PFN_xrVoidFunction GenValidUsageInnerGetInstanceProcAddr(\n'
+        validation_source_funcs += '    const char*                                 name) {\n'
+        validation_source_funcs += '        std::string func_name = name;\n\n'
 
-        count = 0
         for x in range(0, 2):
             if x == 0:
                 commands = self.core_commands
@@ -2734,17 +2738,45 @@ class ValidationSourceOutputGenerator(AutomaticSourceOutputGenerator):
                 if cur_cmd.protect_value:
                     validation_source_funcs += '#if %s\n' % cur_cmd.protect_string
 
-                if count == 0:
-                    validation_source_funcs += '        if (func_name == "%s") {\n' % cur_cmd.name
-                else:
-                    validation_source_funcs += '        } else if (func_name == "%s") {\n' % cur_cmd.name
-                count = count + 1
-
-                validation_source_funcs += '            *function = reinterpret_cast<PFN_xrVoidFunction>(%s);\n' % layer_command_name
+                validation_source_funcs += '        if (func_name == "%s") {\n' % cur_cmd.name
+                validation_source_funcs += '            return reinterpret_cast<PFN_xrVoidFunction>(%s);\n' % layer_command_name
+                validation_source_funcs += '        }\n'
                 if cur_cmd.protect_value:
                     validation_source_funcs += '#endif // %s\n' % cur_cmd.protect_string
 
+        # If we fell thru, return null
+        validation_source_funcs += '        return nullptr;\n'
+        validation_source_funcs += '    }\n'
+
+        validation_source_funcs += '\n// API Layer\'s xrGetInstanceProcAddr\n'
+        validation_source_funcs += 'XRAPI_ATTR XrResult XRAPI_CALL GenValidUsageXrGetInstanceProcAddr(\n'
+        validation_source_funcs += '    XrInstance          instance,\n'
+        validation_source_funcs += '    const char*         name,\n'
+        validation_source_funcs += '    PFN_xrVoidFunction* function) {\n'
+        validation_source_funcs += '    try {\n'
+        validation_source_funcs += '        std::string func_name = name;\n'
+        validation_source_funcs += '        std::vector<GenValidUsageXrObjectInfo> objects;\n'
+        validation_source_funcs += '        if (g_instance_info.verifyHandle(&instance) == VALIDATE_XR_HANDLE_INVALID) {\n'
+        validation_source_funcs += '            // Make sure the instance is valid if it is not XR_NULL_HANDLE\n'
+        validation_source_funcs += '            std::vector<GenValidUsageXrObjectInfo> objects;\n'
+        validation_source_funcs += '            objects.resize(1);\n'
+        validation_source_funcs += '            objects[0].handle = MakeHandleGeneric(instance);\n'
+        validation_source_funcs += '            objects[0].type = XR_OBJECT_TYPE_INSTANCE;\n'
+        validation_source_funcs += '            CoreValidLogMessage(nullptr, "VUID-xrGetInstanceProcAddr-instance-parameter",\n'
+        validation_source_funcs += '                                VALID_USAGE_DEBUG_SEVERITY_ERROR, "xrGetInstanceProcAddr", objects,\n'
+        validation_source_funcs += '                                "Invalid instance handle provided.");\n'
         validation_source_funcs += '        }\n'
+        validation_source_funcs += '        // NOTE: Can\'t validate "VUID-xrGetInstanceProcAddr-name-parameter" null-termination\n'
+        validation_source_funcs += '        // If we setup the function, just return\n'
+        validation_source_funcs += '        if (function == nullptr) {\n'
+        validation_source_funcs += '            CoreValidLogMessage(nullptr, "VUID-xrGetInstanceProcAddr-function-parameter",\n'
+        validation_source_funcs += '                                VALID_USAGE_DEBUG_SEVERITY_ERROR, "xrGetInstanceProcAddr", objects,\n'
+        validation_source_funcs += '                                "function is NULL");\n'
+        validation_source_funcs += '            return XR_ERROR_VALIDATION_FAILURE;\n'
+        validation_source_funcs += '        }\n'
+
+        validation_source_funcs += '        *function = GenValidUsageInnerGetInstanceProcAddr(name);\n\n'
+
         validation_source_funcs += '        // If we setup the function, just return\n'
         validation_source_funcs += '        if (*function != nullptr) {\n'
         validation_source_funcs += '            return XR_SUCCESS;\n'

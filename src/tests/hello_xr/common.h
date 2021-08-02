@@ -1,3 +1,7 @@
+// Copyright (c) 2017-2021, The Khronos Group Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 #include <string>
@@ -5,6 +9,8 @@
 #include <algorithm>
 #include <stdarg.h>
 #include <stddef.h>
+
+#include <openxr/openxr_reflection.h>
 
 // Macro to generate stringify functions for OpenXR enumerations based data provided in openxr_reflection.h
 // clang-format off

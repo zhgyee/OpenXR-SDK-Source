@@ -1,29 +1,17 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2013-2020 The Khronos Group Inc.
+# Copyright (c) 2013-2021, The Khronos Group Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
 from collections import OrderedDict, namedtuple
 from enum import Enum
 from functools import reduce
 from pathlib import Path
 
-from conventions import ProseListFormats as plf
 from generator import OutputGenerator, write
 from spec_tools.attributes import ExternSyncEntry, LengthEntry
+from spec_tools.conventions import ProseListFormats as plf
 from spec_tools.data_structures import DictOfStringSets
 from spec_tools.util import (findNamedElem, findTypedElem, getElemName,
                              getElemType)
@@ -69,6 +57,11 @@ def _genericIsDisjoint(a, b):
         return False
     # if we never enter the loop...
     return True
+
+
+_WCHAR = "wchar_t"
+_CHAR = "char"
+_CHARACTER_TYPES = {_CHAR, _WCHAR}
 
 
 class StateRelationship(Enum):
@@ -488,7 +481,7 @@ class ValidityOutputGenerator(OutputGenerator):
         entry = ValidityEntry(anchor=(param_name, 'parameter'))
 
         if self.paramIsStaticArray(param):
-            if paramtype != 'char':
+            if paramtype not in _CHARACTER_TYPES:
                 entry += 'Any given element of '
             return entry
 
@@ -580,14 +573,19 @@ class ValidityOutputGenerator(OutputGenerator):
                 entry += '. '
                 entry += see_also
 
-        if self.paramIsStaticArray(param) and paramtype == 'char':
+        if self.paramIsStaticArray(param) and paramtype in _CHARACTER_TYPES:
             # TODO this is a minor hack to determine if this is a command parameter or a struct member
             if self.paramIsConst(param) or blockname.startswith(self.conventions.type_prefix):
+                if paramtype != _CHAR:
+                    raise UnhandledCaseError("input arrays of wchar_t are not yet handled")
                 entry += 'a null-terminated UTF-8 string whose length is less than or equal to '
                 entry += self.staticArrayLength(param)
             else:
                 # This is a command's output parameter
-                entry += 'a character array of length %s ' % self.staticArrayLength(param)
+                entry += 'a '
+                if paramtype == _WCHAR:
+                    entry += "wide "
+                entry += 'character array of length %s ' % self.staticArrayLength(param)
             add_see_also(entry)
             validity += entry
             return validity
@@ -642,7 +640,7 @@ class ValidityOutputGenerator(OutputGenerator):
                     # An array of void values is a byte array.
                     entry += 'byte'
 
-            elif paramtype == 'char':
+            elif paramtype == _CHAR:
                 # A null terminated array of chars is a string
                 if lengths[-1].null_terminated:
                     entry += 'UTF-8 string'
@@ -763,7 +761,7 @@ class ValidityOutputGenerator(OutputGenerator):
                                     or is_pointer
                                     or not self.isStructAlwaysValid(paramtype))
         typetext = None
-        if paramtype in ('void', 'char'):
+        if paramtype in ('void', _CHAR):
             # Chars and void are special cases - we call the impl function,
             # but don't use the typetext.
             # A null-terminated char array is a string, else it's chars.
@@ -1375,6 +1373,19 @@ class ValidityOutputGenerator(OutputGenerator):
         self.writeInclude('protos', name, validity, threadsafety,
                           commandpropertiesentry, successcodes, errorcodes)
 
+    def genStructInternals(self, typeinfo, typeName, validity, threadsafety):
+        """Internals of generating for a struct, so aliases can be handled."""
+
+        if typeinfo.elem.get('returnedonly') is None:
+            validity += self.makeStructOrCommandValidity(
+                typeinfo.elem, typeName, typeinfo.getMembers())
+            threadsafety = self.makeThreadSafetyBlock(typeinfo.elem, 'member')
+
+        else:
+            # Need to generate structure type and next pointer chain member validation
+            validity += self.makeOutputOnlyStructValidity(
+                typeinfo.elem, typeName, typeinfo.getMembers())
+
     def genStruct(self, typeinfo, typeName, alias):
         """Struct Generation."""
         OutputGenerator.genStruct(self, typeinfo, typeName, alias)
@@ -1388,15 +1399,14 @@ class ValidityOutputGenerator(OutputGenerator):
         # OpenXR-only: make sure extension is enabled
         validity.possiblyAddExtensionRequirement(self.currentExtension, 'using slink:')
 
-        if typeinfo.elem.get('returnedonly') is None:
-            validity += self.makeStructOrCommandValidity(
-                typeinfo.elem, typeName, typeinfo.getMembers())
-            threadsafety = self.makeThreadSafetyBlock(typeinfo.elem, 'member')
+        self.genStructInternals(typeinfo, typeName, validity, threadsafety)
 
-        else:
-            # Need to generate structure type and next pointer chain member validation
-            validity += self.makeOutputOnlyStructValidity(
-                typeinfo.elem, typeName, typeinfo.getMembers())
+        if alias and self.conventions.duplicate_aliased_structs:
+            validity.addValidityEntry(
+                '**Note:** slink:{new} is an alias for slink:{old}, so implicit valid usage for slink:{old} has been replicated below.'.format(
+                    old=alias, new=typeName))
+            alias_info = self.registry.typedict[alias]
+            self.genStructInternals(alias_info, alias, validity, threadsafety)
 
         self.writeInclude('structs', typeName, validity,
                           threadsafety, None, None, None)

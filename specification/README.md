@@ -1,5 +1,11 @@
 # Building the Specification
 
+<!--
+Copyright (c) 2014-2021, The Khronos Group Inc.
+
+SPDX-License-Identifier: CC-BY-4.0
+-->
+
 Before building the specification, install the necessary prerequisite tools as described later in this document.
 
 You may instead choose to use the `open-in-docker.sh` script,
@@ -125,6 +131,9 @@ Before building the OpenXR spec, you must install the following tools:
     which are likely sufficient.
   * To install with pip, the typical `pip3 install -r requirements.txt`
     will work.
+  * To be able to generate the Python docs, or perform spec diffs, you'll
+    additionally need: `sudo apt install python3-pytest python3-pypdf2` and
+    `python3 -m pip install pdoc3 pdf_diff`
 * Ruby (`ruby`, version 2.3.3 tested, anything newer should work)
   * The Ruby development package (ruby-dev) may also be required in some
     environments.
@@ -202,13 +211,15 @@ gem in the user's directory. The Ubuntu 16.04.6 default Ruby install (version
 2.3.1) seems to be up-to-date enough to run all the required gems. Just follow
 the Debian-derived Linux instructions below.
 
+
 **Notes:**
 
 * If you're already using [rvm](https://rvm.io) or
   [rbenv](https://github.com/rbenv/rbenv) to upgrade your version of Ruby,
   that's OK, but it's no longer necessary. Ubuntu 16.04 and newer (as well as
   probably most any distribution you'd find for WSL) contains a new enough Ruby,
-  just not new enough AsciiDoctor and AsciiDoctor-PDF.
+  just not new enough AsciiDoctor and AsciiDoctor-PDF. Ubuntu 20.04 and newer
+  contains a new-enough everything.
 * Most of the tools on Bash for Windows are quite happy with Windows line
   endings (CR LF), but bash scripts expect Unix line endings (LF).
   The file `.gitattributes` at the top of the repo
@@ -229,16 +240,31 @@ and Yum (SuSE) will have different requirements.
 # Absolute bare minimum for only these makefile targets:
 # header html manhtmlpages extprocess styleguide loader
 sudo apt install make git ruby python3
+gem install --user asciidoctor
 
 # More complete, for building these makefile targets:
 # header html pdf pdfA4 manhtmlpages styleguide loader header-test: build-examples check-spec-links release
 sudo apt -y install build-essential python3 git libxml2-dev ttf-lyx ghostscript ruby \
   python3-termcolor python3-tabulate python3-networkx
+gem install --user asciidoctor asciidoctor-pdf
 
 # Full build: supports all makefile targets, including the "all" target
 sudo apt -y install build-essential python3 git libxml2-dev ttf-lyx ghostscript ruby \
   trang jing python3-termcolor python3-tabulate python3-networkx
-gem install --user asciidoctor "~>2.0.10"
+gem install --user asciidoctor asciidoctor-pdf
+```
+
+Ubuntu 20.04+, Debian Bullseye, and Debian Buster Backports all have new enough
+asciidoctor and asciidoctor-pdf in their repositories (Buster has asciidoctor-pdf
+1.5.0 alpha17 which isn't ideal but should work) so the gem lines below can
+be replaced with something like this (adding `-t buster-backports` if you're still
+on Buster):
+
+```
+sudo apt install asciidoctor
+
+# or this, if you also want to build PDFs:
+sudo apt install asciidoctor ruby-asciidoctor-pdf
 ```
 
 #### macOS
@@ -249,7 +275,7 @@ know how, please contribute instructions.
 ## Installing Gems
 
 Since most Linux distributions do not have new enough AsciiDoctor/AsciiDoctor-PDF,
-these are installed by gem separately.
+these can be installed by gem separately.
 
 Something like this will work:
 

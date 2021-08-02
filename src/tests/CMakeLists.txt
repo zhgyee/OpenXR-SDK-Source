@@ -16,14 +16,11 @@
 #
 # Author:
 #
-if (NOT ANDROID)
-add_subdirectory(list)
-endif()
-if(OPENGL_FOUND AND NOT TARGET openxr-gfxwrapper)
-    return()
-endif()
 
 add_subdirectory(hello_xr)
-if(BUILD_LOADER)
-add_subdirectory(loader_test)
+if(NOT ANDROID)
+    add_subdirectory(list)
+    if(BUILD_LOADER)
+        add_subdirectory(loader_test)
+    endif()
 endif()

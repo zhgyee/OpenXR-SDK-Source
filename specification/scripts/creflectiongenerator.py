@@ -1,20 +1,12 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2013-2020 The Khronos Group Inc.
+# Copyright (c) 2013-2021, The Khronos Group Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# NOTE: Generated file is dual-licensed (Apache-2.0 OR MIT),
+# to allow downstream projects to use the standard while
+# avoiding license incompatibility
 
 import re
 
@@ -31,6 +23,15 @@ class CStruct:
         self.members = members
         self.structTypeName = structTypeName
         self.protect = protect
+
+    @property
+    def protect_value(self):
+        return self.protect is not None
+
+    @property
+    def protect_string(self):
+        if self.protect:
+            return " && ".join("defined({})".format(x) for x in self.protect)
 
 
 class CBitmask:
@@ -60,21 +61,36 @@ class CReflectionOutputGenerator(OutputGenerator):
         self.structs = []
         self.enums = []
         self.bitmasks = []
+        self.protects = set()
 
     def beginFile(self, genOpts):
         OutputGenerator.beginFile(self, genOpts)
         self.template = JinjaTemplate(self.env, "template_{}".format(genOpts.filename))
 
+    def getStructsForProtect(self, protect=None):
+        return [x for x in self.structs
+                if x.protect == protect and x.structTypeName is not None]
+
     def endFile(self):
         file_data = ''
-        try:
-            file_data += self.template.render(
-                structs=self.structs,
-                enums=self.enums,
-                bitmasks=self.bitmasks)
-        except TemplateSyntaxError as e:
-            print("{}:{} error: {}".format(e.filename, e.lineno, e.message))
-            raise e
+
+        unprotected_structs = self.getStructsForProtect()
+        protected_structs = [(x, self.getStructsForProtect(x))
+                             for x in sorted(self.protects)]
+
+        extensions = list(
+            ((name, data) for name, data in self.registry.extdict.items()
+             if data.supported != 'disabled'))
+        def getNumber(x):
+            return int(x[1].number)
+        extensions.sort(key=getNumber)
+        file_data += self.template.render(
+            unprotectedStructs=unprotected_structs,
+            protectedStructs=protected_structs,
+            structs=self.structs,
+            enums=self.enums,
+            bitmasks=self.bitmasks,
+            extensions=extensions)
         write(file_data, file=self.outFile)
 
         # Finish processing in superclass
@@ -84,6 +100,8 @@ class CReflectionOutputGenerator(OutputGenerator):
         OutputGenerator.genType(self, typeinfo, name, alias)
         typeElem = typeinfo.elem
 
+        if alias:
+            return
         category = typeElem.get('category')
         if category in ('struct', 'union'):
             # If the type is a struct type, generate it using the
@@ -92,8 +110,6 @@ class CReflectionOutputGenerator(OutputGenerator):
 
     def genStruct(self, typeinfo, typeName, alias):
         OutputGenerator.genStruct(self, typeinfo, typeName, alias)
-
-        typeElem = typeinfo.elem
 
         if alias:
             return
@@ -108,7 +124,21 @@ class CReflectionOutputGenerator(OutputGenerator):
 
             members.append(memberName)
 
-        self.structs.append(CStruct(typeName, structTypeName, members, typeinfo.elem.get('protect')))
+        protect = set()
+        if self.featureExtraProtect:
+            protect.update(self.featureExtraProtect.split(','))
+        localProtect = typeinfo.elem.get('protect')
+        if localProtect:
+            protect.update(localProtect.split(','))
+
+        if protect:
+            protect = tuple(sorted(protect))
+        else:
+            protect = None
+
+        self.structs.append(CStruct(typeName, structTypeName, members, protect))
+        if protect:
+            self.protects.add(protect)
 
     def genGroup(self, groupinfo, groupName, alias=None):
         OutputGenerator.genGroup(self, groupinfo, groupName, alias)
@@ -141,6 +171,9 @@ class CReflectionOutputGenerator(OutputGenerator):
             enumTuples = []
             for elem in groupElem.findall('enum'):
                 (numVal, strVal) = self.enumToValue(elem, True)
+                if numVal is None:
+                    # then this is an alias or something
+                    continue
                 enumTuples.append((getElemName(elem), strVal))
 
             self.enums.append(CEnum(groupName, expandPrefix, expandSuffix, enumTuples))

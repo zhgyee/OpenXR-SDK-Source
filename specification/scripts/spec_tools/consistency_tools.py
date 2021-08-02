@@ -4,29 +4,20 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
 # Author(s):    Ryan Pavlik <ryan.pavlik@collabora.com>
 """Provides utilities to write a script to verify XML registry consistency."""
 
 import re
+from typing import Set
 
 import networkx as nx
+from networkx.algorithms import shortest_path
 
 from .algo import RecursiveMemoize
 from .attributes import ExternSyncEntry, LengthEntry
 from .data_structures import DictOfStringSets
 from .util import findNamedElem, getElemName, getElemType
+from .conventions import ConventionsBase
 
 
 def _get_extension_tags(reg):
@@ -35,7 +26,7 @@ def _get_extension_tags(reg):
 
 
 class XMLChecker:
-    def __init__(self, entity_db,  conventions, manual_types_to_codes=None,
+    def __init__(self, entity_db,  conventions: ConventionsBase, manual_types_to_codes=None,
                  forward_only_types_to_codes=None,
                  reverse_only_types_to_codes=None,
                  suppressions=None):
@@ -111,13 +102,14 @@ class XMLChecker:
         for codes in self.input_type_to_codes.values():
             specified_codes.update(codes)
 
+        self.return_codes: Set[str]
         unrecognized = specified_codes - self.return_codes
         if unrecognized:
             raise RuntimeError("Return code mentioned in script that isn't in the registry: " +
                                ', '.join(unrecognized))
 
         self.referenced_input_types = ReferencedTypes(self.db, self.is_input)
-        self.referenced_api_types = ReferencedTypes(self.db, self.is_api_type)
+        self.referenced_types = ReferencedTypes(self.db)
         if not suppressions:
             suppressions = {}
         self.suppressions = DictOfStringSets(suppressions)
@@ -182,16 +174,31 @@ class XMLChecker:
         be skipped for a command.
 
         May override."""
-        return False
+
+        return self.conventions.should_skip_checking_codes
 
     def get_codes_for_command_and_type(self, cmd_name, type_name):
-        """Return a set of error codes expected due to having
+        """Return a set of return codes expected due to having
         an input argument of type type_name.
 
         The cmd_name is passed for use by extending methods.
+        Note that you should not use cmd_name to add codes, just to
+        filter them out. See get_required_codes_for_command() to do that.
 
         May extend."""
         return self.input_type_to_codes.get(type_name, set())
+
+    def get_required_codes_for_command(self, cmd_name):
+        """Return a set of return codes required due to having a particular name.
+
+        May override."""
+        return set()
+
+    def get_forbidden_codes_for_command(self, cmd_name):
+        """Return a set of return codes not permittted due to having a particular name.
+
+        May override."""
+        return set()
 
     def check(self):
         """Iterate through the registry, looking for consistency problems.
@@ -212,12 +219,11 @@ class XMLChecker:
 
             self.check_type(name, info, cat)
 
+        self.ext_numbers = set()
         for name, info in self.reg.extdict.items():
-            if info.elem.get('supported') != self.conventions.xml_api_name:
-                # Skip unsupported extensions
-                continue
+            supported = (info.elem.get('supported') == self.conventions.xml_api_name)
             self.set_error_context(entity=name, elem=info.elem)
-            self.check_extension(name, info)
+            self.check_extension(name, info, supported)
 
         entities_with_messages = set(
             self.errors.keys()).union(self.warnings.keys())
@@ -298,6 +304,22 @@ class XMLChecker:
                         self.record_error("References a non-existent parameter/member in the length of",
                                           getElemName(param), ":", entry.other_param_name)
 
+    def check_referenced_type(self, desc, ref_name):
+        """
+        Record an error if a type mentioned somewhere doesn't exist.
+
+        :param desc: Description of where this type reference was found,
+                     for the error message.
+        :param ref_name: The name of the referenced type. If false-ish (incl. None),
+                         checking is skipped, so OK to pass the results of
+                         info.elem.get() directly
+        """
+        if ref_name:
+            entity = self.db.findEntity(ref_name)
+            if not entity:
+                self.record_error("Unknown type named in", desc, ":",
+                                  ref_name)
+
     def check_type(self, name, info, category):
         """Check a type's XML data for consistency.
 
@@ -323,17 +345,32 @@ class XMLChecker:
                         self.record_error("Type has incorrect type-member value: expected",
                                           expected, "got", val)
 
+            # Check structextends attribute, if present.
+            self.check_referenced_type("'structextends' attribute", info.elem.get("structextends"))
+
+            # Check parentstruct attribute, if present.
+            self.check_referenced_type("'parentstruct' attribute", info.elem.get("parentstruct"))
+
         elif category == "bitmask":
             if 'Flags' not in name:
                 self.record_error("Name of bitmask doesn't include 'Flags'")
+        elif category == "handle":
+            # Check parent attribute, if present.
+            self.check_referenced_type("'parent' attribute", info.elem.get("parent"))
 
-    def check_extension(self, name, info):
+    def check_extension(self, name, info, supported):
         """Check an extension's XML data for consistency.
 
         Called from check.
 
         May extend."""
-        pass
+        # Verify that each extension has a unique number
+        extension_number = info.elem.get('number')
+        if extension_number is not None and extension_number != '0':
+            if extension_number in self.ext_numbers:
+                self.record_error('Duplicate extension number ' + extension_number)
+            else:
+                self.ext_numbers.add(extension_number)
 
     def check_command(self, name, info):
         """Check a command's XML data for consistency.
@@ -413,7 +450,20 @@ class XMLChecker:
 
         May extend."""
         referenced_input = self.referenced_input_types[name]
-        referenced_types = self.referenced_api_types[name]
+        referenced_types = self.referenced_types[name]
+        error_prefix = self.conventions.api_prefix + "ERROR"
+
+        bad_success = {x for x in successcodes if x.startswith(error_prefix)}
+        if bad_success:
+            self.record_error("Found error code(s)",
+                              ",".join(bad_success),
+                              "listed in the successcodes attributes")
+
+        bad_errors = {x for x in errorcodes if not x.startswith(error_prefix)}
+        if bad_errors:
+            self.record_error("Found success code(s)",
+                              ",".join(bad_errors),
+                              "listed in the errorcodes attributes")
 
         # Check that we have all the codes we expect, based on input types.
         for referenced_type in referenced_input:
@@ -430,6 +480,20 @@ class XMLChecker:
                                   referenced_type,
                                   "found via path",
                                   path_str)
+
+        # Check that we have all the codes we expect based on command name.
+        missing_codes = self.get_required_codes_for_command(name) - codes
+        if missing_codes:
+            self.record_error("Missing expected return code(s)",
+                              ",".join(missing_codes),
+                              "implied because of the name of this command")
+
+        # Check that we don't have any codes forbidden based on command name.
+        forbidden = self.get_forbidden_codes_for_command(name).intersection(codes)
+        if forbidden:
+            self.record_error("Got return code(s)",
+                              ", ".join(forbidden),
+                              "that were forbidden due to the name of this command")
 
         # Check that, for each code returned by this command that we can
         # associate with a type, we have some type that can provide it.
@@ -598,7 +662,7 @@ class ReferencedTypes(RecursiveMemoize):
         # Trigger computation
         _ = self[source]
 
-        return nx.algorithms.shortest_path(self.graph, source=source, target=target)
+        return shortest_path(self.graph, source=source, target=target)
 
     def directly_referenced(self, type_name):
         """Get all types referenced directly by type_name that satisfy the predicate.
@@ -700,14 +764,10 @@ def compute_type_to_codes(handle_data, types_to_codes, extra_op=None):
 
     extra_handle_codes = {}
     for handle_type, ancestors in handle_ancestors.items():
-        codes = set()
         # The sets of return codes corresponding to each ancestor type.
-        ancestors_codes = (types_to_codes.get(ancestor, set())
-                           for ancestor in ancestors)
-        codes.union(*ancestors_codes)
-        # for parent_codes in ancestors_codes:
-        #     codes.update(parent_codes)
-        extra_handle_codes[handle_type] = codes
+        ancestors_codes = [types_to_codes.get(ancestor, set())
+                           for ancestor in ancestors]
+        extra_handle_codes[handle_type] = set().union(*ancestors_codes)
 
     for handle_type, extras in extra_handle_codes.items():
         types_to_codes.add(handle_type, extras)
