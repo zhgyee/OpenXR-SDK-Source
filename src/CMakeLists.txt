@@ -61,7 +61,7 @@ find_package(JsonCpp)
 ### All options defined here
 if (ANDROID)
     add_definitions(-DXR_USE_GRAPHICS_API_OPENGL_ES)
-	option(BUILD_LOADER "Build loader" OFF)
+	option(BUILD_LOADER "Build loader" ON)
 else()
 	option(BUILD_LOADER "Build loader" ON)
 endif()
