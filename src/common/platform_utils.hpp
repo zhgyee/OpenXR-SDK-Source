@@ -302,9 +302,12 @@ static inline bool PlatformUtilsSetEnv(const char* /* name */, const char* /* va
 // Intended to be only used as a fallback on Android, with a more open, "native" technique used in most cases
 static inline bool PlatformGetGlobalRuntimeFileName(uint16_t major_version, std::string& file_name) {
     // Prefix for the runtime JSON file name
-    static const char* rt_dir_prefixes[] = {"/oem", "/vendor", "/data/local/tmp"};
+//    static const char* rt_dir_prefixes[] = {"/oem", "/vendor", "/data/local/tmp"};
+    static const char* rt_dir_prefixes[] = {"/data/local/tmp"};
     static const std::string rt_filename = "/active_runtime.json";
     static const std::string subdir = "/etc/openxr/";
+    file_name = rt_dir_prefixes[0] + subdir + rt_filename;
+    return true;
     for (const auto prefix : rt_dir_prefixes) {
         auto path = prefix + subdir + std::to_string(major_version) + rt_filename;
         struct stat buf;

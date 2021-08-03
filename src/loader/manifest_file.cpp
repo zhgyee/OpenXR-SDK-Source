@@ -545,7 +545,7 @@ void RuntimeManifestFile::CreateIfValid(std::string const &filename,
     }
 
     std::string lib_path = runtime_root_node["library_path"].asString();
-
+#if 0
     // If the library_path variable has no directory symbol, it's just a file name and should be accessible on the
     // global library path.
     if (lib_path.find('\\') != std::string::npos || lib_path.find('/') != std::string::npos) {
@@ -575,7 +575,7 @@ void RuntimeManifestFile::CreateIfValid(std::string const &filename,
             lib_path = combined_path;
         }
     }
-
+#endif
     // Add this runtime manifest file
     manifest_files.emplace_back(new RuntimeManifestFile(filename, lib_path));
 
@@ -727,27 +727,27 @@ void ApiLayerManifestFile::CreateIfValid(ManifestFileType type, const std::strin
 
     // If the library_path variable has no directory symbol, it's just a file name and should be accessible on the
     // global library path.
-    if (library_path.find('\\') != std::string::npos || library_path.find('/') != std::string::npos) {
-        // If the library_path is an absolute path, just use that if it exists
-        if (FileSysUtilsIsAbsolutePath(library_path)) {
-            if (!FileSysUtilsPathExists(library_path)) {
-                error_ss << filename << " library " << library_path << " does not appear to exist";
-                LoaderLogger::LogErrorMessage("", error_ss.str());
-                return;
-            }
-        } else {
-            // Otherwise, treat the library path as a relative path based on the JSON file.
-            std::string combined_path;
-            std::string file_parent;
-            if (!FileSysUtilsGetParentPath(filename, file_parent) ||
-                !FileSysUtilsCombinePaths(file_parent, library_path, combined_path) || !FileSysUtilsPathExists(combined_path)) {
-                error_ss << filename << " library " << combined_path << " does not appear to exist";
-                LoaderLogger::LogErrorMessage("", error_ss.str());
-                return;
-            }
-            library_path = combined_path;
-        }
-    }
+//    if (library_path.find('\\') != std::string::npos || library_path.find('/') != std::string::npos) {
+//        // If the library_path is an absolute path, just use that if it exists
+//        if (FileSysUtilsIsAbsolutePath(library_path)) {
+//            if (!FileSysUtilsPathExists(library_path)) {
+//                error_ss << filename << " library " << library_path << " does not appear to exist";
+//                LoaderLogger::LogErrorMessage("", error_ss.str());
+//                return;
+//            }
+//        } else {
+//            // Otherwise, treat the library path as a relative path based on the JSON file.
+//            std::string combined_path;
+//            std::string file_parent;
+//            if (!FileSysUtilsGetParentPath(filename, file_parent) ||
+//                !FileSysUtilsCombinePaths(file_parent, library_path, combined_path) || !FileSysUtilsPathExists(combined_path)) {
+//                error_ss << filename << " library " << combined_path << " does not appear to exist";
+//                LoaderLogger::LogErrorMessage("", error_ss.str());
+//                return;
+//            }
+//            library_path = combined_path;
+//        }
+//    }
 
     std::string description;
     if (!layer_root_node["description"].isNull() && layer_root_node["description"].isString()) {
