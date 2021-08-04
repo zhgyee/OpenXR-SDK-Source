@@ -95,6 +95,7 @@ bool UpdateOptionsFromCommandLine(Options& options, int argc, char* argv[]) {
 struct AndroidAppState {
     ANativeWindow* NativeWindow = nullptr;
     bool Resumed = false;
+    std::shared_ptr<IOpenXrProgram> program;
 };
 
 /**
@@ -139,6 +140,11 @@ static void app_handle_cmd(struct android_app* app, int32_t cmd) {
             Log::Write(Log::Level::Info, "surfaceCreated()");
             Log::Write(Log::Level::Info, "    APP_CMD_INIT_WINDOW");
             appState->NativeWindow = app->window;
+            Log::Write(Log::Level::Info, "Create instance");
+            appState->program->CreateInstance();
+            appState->program->InitializeSystem();
+            appState->program->InitializeSession();
+            appState->program->CreateSwapchains();
             break;
         }
         case APP_CMD_TERM_WINDOW: {
@@ -184,7 +190,7 @@ void android_main(struct android_app* app) {
 
         // Initialize the OpenXR program.
         std::shared_ptr<IOpenXrProgram> program = CreateOpenXrProgram(options, platformPlugin, graphicsPlugin);
-
+        appState.program = program;
         // Initialize the loader for this platform
         PFN_xrInitializeLoaderKHR initializeLoader = nullptr;
         if (XR_SUCCEEDED(
@@ -197,11 +203,6 @@ void android_main(struct android_app* app) {
             loaderInitInfoAndroid.applicationContext = app->activity->clazz;
             initializeLoader((const XrLoaderInitInfoBaseHeaderKHR*)&loaderInitInfoAndroid);
         }
-
-        program->CreateInstance();
-        program->InitializeSystem();
-        program->InitializeSession();
-        program->CreateSwapchains();
 
         while (app->destroyRequested == 0) {
             // Read all pending events.
@@ -221,14 +222,15 @@ void android_main(struct android_app* app) {
                     source->process(app, source);
                 }
             }
+            if (appState.NativeWindow != nullptr) {
+                program->PollEvents(&exitRenderLoop, &requestRestart);
+                if (!program->IsSessionRunning()) {
+                    continue;
+                }
 
-            program->PollEvents(&exitRenderLoop, &requestRestart);
-            if (!program->IsSessionRunning()) {
-                continue;
+                program->PollActions();
+                program->RenderFrame();
             }
-
-            program->PollActions();
-            program->RenderFrame();
         }
 
         app->activity->vm->DetachCurrentThread();
