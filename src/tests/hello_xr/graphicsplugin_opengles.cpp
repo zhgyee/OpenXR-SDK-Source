@@ -15,7 +15,8 @@
 namespace {
 constexpr float DarkSlateGray[] = {0.184313729f, 0.309803933f, 0.309803933f, 1.0f};
 
-static const char* VertexShaderGlsl = R"_(#version 320 es
+static const char* VertexShaderGlsl = R"_(
+    #version 320 es
 
     in vec3 VertexPos;
     in vec3 VertexColor;
@@ -30,7 +31,8 @@ static const char* VertexShaderGlsl = R"_(#version 320 es
     }
     )_";
 
-static const char* FragmentShaderGlsl = R"_(#version 320 es
+static const char* FragmentShaderGlsl = R"_(
+    #version 320 es
 
     in lowp vec3 PSVertexColor;
     out lowp vec4 FragColor;
@@ -117,7 +119,7 @@ struct OpenGLESGraphicsPlugin : public IGraphicsPlugin {
 
 #if defined(XR_USE_PLATFORM_ANDROID)
         m_graphicsBinding.display = window.display;
-        m_graphicsBinding.config = window.nativeWindow;//(EGLConfig)0;//workaround:pass native window here
+        m_graphicsBinding.config = (EGLConfig)0;
         m_graphicsBinding.context = window.context.context;
 #endif
 

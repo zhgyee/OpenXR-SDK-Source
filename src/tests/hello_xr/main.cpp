@@ -19,6 +19,8 @@ bool UpdateOptionsFromSystemProperties(Options& options) {
     char value[PROP_VALUE_MAX] = {};
     if (__system_property_get("debug.xr.graphicsPlugin", value) != 0) {
         options.GraphicsPlugin = value;
+    } else {
+        options.GraphicsPlugin = "OpenGLES";
     }
 
     // Check for required parameters.
@@ -89,12 +91,9 @@ bool UpdateOptionsFromCommandLine(Options& options, int argc, char* argv[]) {
 }  // namespace
 
 #ifdef XR_USE_PLATFORM_ANDROID
-extern "C" {
-    void set_window(void*);
-};
+
 struct AndroidAppState {
     ANativeWindow* NativeWindow = nullptr;
-    std::shared_ptr<IOpenXrProgram> program = nullptr;
     bool Resumed = false;
 };
 
@@ -140,10 +139,6 @@ static void app_handle_cmd(struct android_app* app, int32_t cmd) {
             Log::Write(Log::Level::Info, "surfaceCreated()");
             Log::Write(Log::Level::Info, "    APP_CMD_INIT_WINDOW");
             appState->NativeWindow = app->window;
-            set_window(app->window);
-            appState->program->InitializeSystem();
-            appState->program->InitializeSession();
-            appState->program->CreateSwapchains();
             break;
         }
         case APP_CMD_TERM_WINDOW: {
@@ -204,9 +199,9 @@ void android_main(struct android_app* app) {
         }
 
         program->CreateInstance();
-        appState.program = program;
-//        program->InitializeSession();
-//        program->CreateSwapchains();
+        program->InitializeSystem();
+        program->InitializeSession();
+        program->CreateSwapchains();
 
         while (app->destroyRequested == 0) {
             // Read all pending events.
@@ -226,9 +221,7 @@ void android_main(struct android_app* app) {
                     source->process(app, source);
                 }
             }
-            if (appState.NativeWindow == nullptr) {
-                continue;
-            }
+
             program->PollEvents(&exitRenderLoop, &requestRestart);
             if (!program->IsSessionRunning()) {
                 continue;

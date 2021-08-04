@@ -128,6 +128,10 @@ if(ANDROID)
         openxr_loader
         PRIVATE
         ${ANDROID_LOG_LIBRARY})
+    set_target_properties(openxr_loader
+        PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/libs/${CMAKE_BUILD_TYPE}/${ANDROID_ABI}")
+
 endif()
 
 target_compile_definitions(openxr_loader PRIVATE API_NAME="OpenXR")
